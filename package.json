@@ -1,0 +1,23 @@
+{
+  "name": "starship-mystery",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build && node scripts/gen-sw.mjs",
+    "preview": "vite preview --port 4173",
+    "test": "vitest run",
+    "e2e": "node e2e/play.mjs",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "playwright": "1.56",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3",
+    "vitest": "^3.2.7"
+  },
+  "private": true,
+  "type": "module"
+}

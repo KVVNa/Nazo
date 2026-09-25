@@ -1,0 +1,5 @@
+node_modules/
+dist/
+e2e/shots/
+e2e/tmp/
+.DS_Store
