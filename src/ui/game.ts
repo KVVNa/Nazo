@@ -1,0 +1,168 @@
+// ゲームの進行役。UI はここから ViewModel を受け取り、操作を送るだけ。GameState 自体は外に出さない。
+import type { Action, CrewId, EvidenceId, Hypothesis, Policy } from '../core/types';
+import type { GameState } from '../core/types';
+import { generateCase } from '../gen/generate';
+import { applyAction, step, type StepResult } from '../sim/sim';
+import { buildView, type ViewModel } from '../view/view';
+import { clearSnapshot, loadSnapshot, saveSnapshot, saveVoyageCase, loadSettings, saveSettings, type Settings } from '../save/save';
+import { evaluateCase } from '../judge/judge';
+
+type Listener = (v: ViewModel, ev: { pause: string | null; sfx: string[]; ticked: boolean }) => void;
+
+const TICKS_PER_SEC = [0, 2, 4, 8];
+
+class Game {
+  private s: GameState | null = null;
+  private listeners: Listener[] = [];
+  private raf = 0;
+  private acc = 0;
+  private last = 0;
+  running = false;
+  canRun = true; // 地図を見ているときだけ true（ボードやメニューでは止まる）
+  settings: Settings = loadSettings();
+  voyageSaved = false;
+
+  hasSnapshot(): boolean { return !!loadSnapshot(); }
+
+  newGame(seed = 20260925) {
+    this.s = generateCase(seed);
+    this.voyageSaved = false;
+    this.running = false;
+    this.emit(null, []);
+  }
+
+  resume(): boolean {
+    const st = loadSnapshot();
+    if (!st) return false;
+    this.s = st;
+    this.running = false;
+    this.voyageSaved = false;
+    this.emit(null, []);
+    return true;
+  }
+
+  get active() { return !!this.s; }
+  view(): ViewModel | null { return this.s ? buildView(this.s) : null; }
+
+  subscribe(fn: Listener) { this.listeners.push(fn); return () => { this.listeners = this.listeners.filter((x) => x !== fn); }; }
+
+  private emit(pause: string | null, sfx: string[], ticked = false) {
+    if (!this.s) return;
+    const v = buildView(this.s);
+    for (const l of this.listeners) l(v, { pause, sfx, ticked });
+  }
+
+  dispatch(a: Action) {
+    if (!this.s) return;
+    const r = applyAction(this.s, a);
+    this.persist();
+    this.emit(r.pause, r.sfx);
+  }
+
+  setPolicy(crew: CrewId, policy: Policy) { this.dispatch({ type: 'setPolicy', crew, policy }); }
+  talk(crew: CrewId) { this.dispatch({ type: 'talk', crew }); }
+  confront(crew: CrewId, evidence: EvidenceId) { this.dispatch({ type: 'confront', crew, evidence }); }
+  answer(logId: number, allow: boolean) { this.dispatch({ type: 'answerConfirm', logId, allow }); }
+  submit(h: Hypothesis) { this.dispatch({ type: 'submit', hyp: h }); }
+
+  markRead() { if (this.s) this.s.player.unread = 0; }
+
+  // ボード操作はシミュレーションに影響しないので操作列には入れない（セーブには残る）
+  moveCard(id: string, x: number, y: number) {
+    const c = this.s?.player.board.cards.find((k) => k.id === id);
+    if (c) { c.x = Math.round(x); c.y = Math.round(y); this.persist(); }
+  }
+  toggleLink(a: string, b: string) {
+    if (!this.s || a === b) return;
+    const L = this.s.player.board.links;
+    const i = L.findIndex((l) => (l.a === a && l.b === b) || (l.a === b && l.b === a));
+    if (i >= 0) L.splice(i, 1); else L.push({ a, b, label: '' });
+    this.persist();
+    this.emit(null, []);
+  }
+  setLinkLabel(a: string, b: string, label: string | null) {
+    if (!this.s) return;
+    const L = this.s.player.board.links;
+    const i = L.findIndex((l) => (l.a === a && l.b === b) || (l.a === b && l.b === a));
+    if (i < 0) return;
+    if (label === null) L.splice(i, 1); else L[i].label = label.slice(0, 30);
+    this.persist();
+    this.emit(null, []);
+  }
+
+  setRunning(on: boolean) {
+    if (!this.s || this.s.phase !== 'play') on = false;
+    if (this.running === on) return;
+    this.running = on;
+    if (on) this.loop();
+    this.emit(null, []);
+  }
+
+  setSpeed(n: number) { this.settings.speed = n; saveSettings(this.settings); this.emit(null, []); }
+  saveSettings() { saveSettings(this.settings); }
+
+  private loop() {
+    cancelAnimationFrame(this.raf);
+    this.last = performance.now();
+    this.acc = 0;
+    const frame = (t: number) => {
+      if (!this.running || !this.s) return;
+      const dt = Math.min(0.25, (t - this.last) / 1000);
+      this.last = t;
+      if (this.canRun) this.acc += dt * TICKS_PER_SEC[this.settings.speed];
+      let pause: string | null = null;
+      const sfx: string[] = [];
+      let n = 0;
+      while (this.acc >= 1 && this.s.phase === 'play' && !pause) {
+        this.acc -= 1;
+        const r: StepResult = step(this.s);
+        sfx.push(...r.sfx);
+        pause = r.pause;
+        n++;
+      }
+      if (pause || this.s.phase !== 'play') { this.running = false; this.acc = 0; }
+      if (n) {
+        if (this.s.world.tick % 30 === 0 || pause) this.persist();
+        this.emit(pause, sfx, true);
+      }
+      if (this.running) this.raf = requestAnimationFrame(frame);
+    };
+    this.raf = requestAnimationFrame(frame);
+  }
+
+  abandon() { this.dispatch({ type: 'abandon' }); }
+
+  persist() {
+    if (!this.s) return;
+    if (this.s.phase === 'ended') { clearSnapshot(); return; }
+    saveSnapshot(this.s);
+  }
+
+  saveVoyage(): boolean {
+    if (!this.s || this.s.phase !== 'ended' || this.voyageSaved) return false;
+    const r = evaluateCase(this.s);
+    const ok = saveVoyageCase({
+      title: this.s.truth.title,
+      grade: r.grade,
+      endedAt: new Date().toISOString(),
+      hull: r.hull,
+      o2: r.o2,
+      crew: r.survivors,
+    });
+    this.voyageSaved = ok;
+    return ok;
+  }
+
+  quit() {
+    this.running = false;
+    cancelAnimationFrame(this.raf);
+    this.persist();
+    this.s = null;
+  }
+
+  // テスト・デバッグ用：シード＋操作列の再現確認
+  debugHash(): string { return this.s ? JSON.stringify(this.s.world) : ''; }
+}
+
+export const game = new Game();
+if (import.meta.env.DEV && typeof window !== 'undefined') (window as any).__game = game;
