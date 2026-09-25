@@ -2,7 +2,7 @@
 import { h } from './dom';
 import { confirmSheet } from './dom';
 import type { ViewModel } from '../view/view';
-import type { CrewId, Hypothesis, PlanKind } from '../core/types';
+import type { CrewId, Hypothesis } from '../core/types';
 
 interface Draft {
   category: Hypothesis['category'] | null;
@@ -11,7 +11,7 @@ interface Draft {
   person: CrewId | '';
   role: 'falsified' | 'sabotage';
   evidence: string[];
-  plan: PlanKind | null;
+  plan: string | null;
 }
 let draft: Draft | null = null;
 
@@ -60,7 +60,7 @@ export function renderHypothesis(v: ViewModel, cb: { submit: (h: Hypothesis) => 
         v.form.crew.map((c) => h('option', { value: c.id, selected: d.person === c.id }, c.name))),
       h('div', { style: { marginTop: '6px' } },
         radio('role', d.role === 'falsified', () => { d.role = 'falsified'; }, '事実を偽った・隠した'),
-        radio('role', d.role === 'sabotage', () => { d.role = 'sabotage'; }, '意図的に工作した'))),
+        radio('role', d.role === 'sabotage', () => { d.role = 'sabotage'; }, '意図的にやった（工作・盗みなど）'))),
 
     h('div', { class: 'form-sec' }, h('h3', {}, `5. 根拠にする主な証拠（最大4つ・${d.evidence.length}件選択）`),
       v.evidence.map((e) => h('label', { class: 'radio' },

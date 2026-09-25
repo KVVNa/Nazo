@@ -46,7 +46,9 @@ export function clearSnapshot() {
 export function migrateState(st: any): GameState | null {
   if (!st || typeof st.schema !== 'number') return null;
   if (st.schema > SCHEMA_VERSION) return null;
-  // schema 1 が最初の版。将来の移行はここに足す。
+  // schema 1（第1話だけの試作）の途中経過は事件の作りが違うので引き継がない
+  if (st.schema < 2) return null;
+  if (st.player?.board && !st.player.board.notes) st.player.board.notes = [];
   return st as GameState;
 }
 

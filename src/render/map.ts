@@ -1,7 +1,6 @@
 // 船内見取り図（Canvas）。描くのは ViewModel だけ。通信断の区画は中身を描かない。
 import type { ViewModel, RoomView } from '../view/view';
 import { drawMini } from './sprites';
-import { EDGES } from '../sim/ship';
 
 export const MAP_W = 13;
 export const MAP_H = 18;
@@ -52,28 +51,20 @@ function drawRoom(g: CanvasRenderingContext2D, room: RoomView, T: number) {
 
 function drawDoors(g: CanvasRenderingContext2D, v: ViewModel, T: number) {
   const byId = new Map(v.rooms.map((r) => [r.id, r]));
-  for (const [a, b] of EDGES) {
-    const A = byId.get(a)!.rect, B = byId.get(b)!.rect;
+  for (const e of v.edges) {
+    const A = byId.get(e.a)!.rect, B = byId.get(e.b)!.rect;
     const ax2 = A[0] + A[2], ay2 = A[1] + A[3], bx2 = B[0] + B[2], by2 = B[1] + B[3];
+    const cx = (e.door.x + OX) * T, cy = (e.door.y + OY) * T;
     g.fillStyle = COL.door;
-    if (ax2 === B[0] || bx2 === A[0]) {
-      const xEdge = ax2 === B[0] ? ax2 : A[0];
-      const y0 = Math.max(A[1], B[1]), y1 = Math.min(ay2, by2);
-      const cy = (y0 + y1) / 2;
-      g.fillRect((xEdge + OX) * T - T * 0.2, (cy + OY) * T - T * 0.45, T * 0.4, T * 0.9);
-    } else if (ay2 === B[1] || by2 === A[1]) {
-      const yEdge = ay2 === B[1] ? ay2 : A[1];
-      const x0 = Math.max(A[0], B[0]), x1 = Math.min(ax2, bx2);
-      const cx = (x0 + x1) / 2;
-      g.fillRect((cx + OX) * T - T * 0.45, (yEdge + OY) * T - T * 0.2, T * 0.9, T * 0.4);
-    } else {
+    if (ax2 === B[0] || bx2 === A[0]) g.fillRect(cx - T * 0.2, cy - T * 0.45, T * 0.4, T * 0.9);
+    else if (ay2 === B[1] || by2 === A[1]) g.fillRect(cx - T * 0.45, cy - T * 0.2, T * 0.9, T * 0.4);
+    else {
       // 縦穴（はしご）
-      const cx = 6;
       const y0 = Math.min(ay2, by2), y1 = Math.max(A[1], B[1]);
       g.fillStyle = '#1a1d29';
-      g.fillRect((cx + OX) * T - T * 0.4, (y0 + OY) * T - 2, T * 0.8, (y1 - y0) * T + 4);
+      g.fillRect(cx - T * 0.4, (y0 + OY) * T - 2, T * 0.8, (y1 - y0) * T + 4);
       g.fillStyle = '#6a7290';
-      for (let k = 0; k < 3; k++) g.fillRect((cx + OX) * T - T * 0.3, (y0 + OY) * T + k * T * 0.33 + 2, T * 0.6, 2);
+      for (let k = 0; k < 3; k++) g.fillRect(cx - T * 0.3, (y0 + OY) * T + k * T * 0.33 + 2, T * 0.6, 2);
     }
   }
 }
@@ -125,20 +116,22 @@ function drawFire(g: CanvasRenderingContext2D, room: RoomView, T: number, t: num
   g.fillText('▲火災', x + w - 4, y + 4);
 }
 
-function drawWater(g: CanvasRenderingContext2D, room: RoomView, T: number) {
+function drawMarks(g: CanvasRenderingContext2D, room: RoomView, T: number) {
   const { x, y, w, h } = rectPx(room.rect, T);
-  g.fillStyle = COL.water;
   const s = Math.max(2, Math.floor(T / 8));
-  const cx = x + w * 0.5, cy = y + h * 0.62;
-  g.globalAlpha = 0.75;
-  g.fillRect(cx - s * 6, cy - s, s * 12, s * 2);
-  g.fillRect(cx - s * 4, cy - s * 2, s * 8, s * 4);
-  g.globalAlpha = 1;
-  g.fillStyle = '#9fdcff';
-  g.font = `${Math.round(T * 0.32)}px system-ui, sans-serif`;
-  g.textAlign = 'center';
-  g.textBaseline = 'top';
-  g.fillText('冷却液（報告）', cx, cy + s * 2.5);
+  room.marks.forEach((m, i) => {
+    const cx = x + w * 0.5, cy = y + h * 0.58 + i * T * 0.7;
+    g.fillStyle = m.color;
+    g.globalAlpha = 0.75;
+    g.fillRect(cx - s * 6, cy - s, s * 12, s * 2);
+    g.fillRect(cx - s * 4, cy - s * 2, s * 8, s * 4);
+    g.globalAlpha = 1;
+    g.fillStyle = '#e8f2ff';
+    g.font = `${Math.round(T * 0.32)}px system-ui, sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    g.fillText(m.text, cx, cy + s * 2.5);
+  });
 }
 
 export function drawMap(canvas: HTMLCanvasElement, v: ViewModel, t: number, selected: string | null, reduce: boolean) {
@@ -161,17 +154,14 @@ export function drawMap(canvas: HTMLCanvasElement, v: ViewModel, t: number, sele
   g.fillStyle = COL.star;
   for (const [sx, sy] of stars) g.fillRect(Math.floor(sx * W), Math.floor(sy * H), 2, 2);
 
-  drawDoors(g, v, T);
   for (const r of v.rooms) drawRoom(g, r, T);
   drawDoors(g, v, T);
 
   for (const r of v.rooms) {
     const { x, y } = rectPx(r.rect, T);
-    if (r.wet && r.comm) drawWater(g, r, T);
-    if (r.fire) drawFire(g, r, T, reduce ? 0 : t);
     if (!r.comm) drawDead(g, r, T);
-    if (r.wet && !r.comm) drawWater(g, r, T);
-    if (r.fire && !r.comm) drawFire(g, r, T, reduce ? 0 : t);
+    if (r.marks.length) drawMarks(g, r, T);
+    if (r.fire) drawFire(g, r, T, reduce ? 0 : t);
     g.fillStyle = COL.label;
     g.font = `bold ${Math.round(T * 0.38)}px system-ui, sans-serif`;
     g.textAlign = 'left';
@@ -199,11 +189,9 @@ export function drawMap(canvas: HTMLCanvasElement, v: ViewModel, t: number, sele
     g.fillText(c.name + (c.health < 50 ? '✚' : ''), px + s * 4, py + s * 10 + 1);
   }
 
-  if (v.power.value <= 0 && !reduce) {
-    g.fillStyle = `rgba(160,20,20,${0.12 + 0.08 * Math.sin(t / 300)})`;
-    g.fillRect(0, 0, W, H);
-  } else if (v.power.value <= 0) {
-    g.fillStyle = 'rgba(120,20,20,0.15)';
+  // どれかの計器が危険域なら赤く脈打つ
+  if (v.meters.some((m) => m.level === 'bad')) {
+    g.fillStyle = reduce ? 'rgba(120,20,20,0.15)' : `rgba(160,20,20,${0.12 + 0.08 * Math.sin(t / 300)})`;
     g.fillRect(0, 0, W, H);
   }
 }

@@ -1,11 +1,14 @@
 // プレイヤーに見せてよい情報だけを組み立てる。UI はこの ViewModel だけを描画する。
 // 通信断の区画にいる乗員の位置・行動・健康は出さない（最後に確認できた値だけ）。
-import type { BoardState, CrewId, GameState, LogEntry, PlanKind, RoomId, Skill } from '../core/types';
-import { START_SEC, secToClock } from '../core/rng';
-import { ROOMS, commOk, edgeMinutes, roomName, TICKS_PER_MIN } from '../sim/ship';
-import { nowSec, policyLabel, PLAN_LABEL } from '../sim/sim';
-import { currentTemplate } from '../gen/generate';
+import type { BoardState, CrewId, GameState, LogEntry, RoomId, Ship, Skill } from '../core/types';
+import { secToClock } from '../core/rng';
+import { commOk, doorPoint, edgeMinutes, roomName, TICKS_PER_MIN } from '../sim/ship';
+import { nowSec, policyLabel, planDefs, planLabel } from '../sim/sim';
+import { caseOf } from '../gen/registry';
 import { evaluateCase, type CaseResult } from '../judge/judge';
+import type { Meter } from '../gen/case_api';
+
+export type { Meter };
 
 export interface CrewView {
   id: CrewId;
@@ -36,7 +39,7 @@ export interface RoomView {
   rect: [number, number, number, number];
   comm: boolean;
   fire: boolean;
-  wet: boolean;
+  marks: { text: string; color: string }[];
 }
 
 export interface EvidenceView { id: string; title: string; text: string; source: string; sourceLabel: string }
@@ -47,12 +50,12 @@ export interface ViewModel {
   phase: GameState['phase'];
   clock: string;
   elapsedMin: number;
-  power: { label: string; value: number; sub: string; warn: boolean };
-  o2: number;
-  hull: number;
+  meters: Meter[];
   stores: { food: number; morale: number; medkits: number; spareParts: number; extinguishers: number };
   rooms: RoomView[];
+  edges: { a: RoomId; b: RoomId; door: { x: number; y: number } }[];
   crew: CrewView[];
+  respond: { label: string; desc: string };
   log: LogView[];
   unread: number;
   evidence: EvidenceView[];
@@ -65,7 +68,7 @@ export interface ViewModel {
   form: {
     causes: { id: string; label: string; category: string }[];
     orderCards: { id: string; label: string }[];
-    plans: { id: PlanKind; label: string; warn?: string }[];
+    plans: { id: string; label: string; warn?: string }[];
     crew: { id: CrewId; name: string }[];
   };
   briefing: string[];
@@ -85,47 +88,45 @@ function seededOrder<T>(arr: T[], seed: number): T[] {
   return a;
 }
 
-function center(id: RoomId, slot: number): { x: number; y: number } {
-  const r = ROOMS.find((x) => x.id === id)!.rect;
-  const cols = Math.max(1, Math.floor(r[2] / 1.4));
-  return { x: r[0] + 0.9 + (slot % cols) * 1.2, y: r[1] + 1.2 + Math.floor(slot / cols) * 1.1 };
+function center(ship: Ship, id: RoomId, slot: number): { x: number; y: number } {
+  const r = ship.rooms.find((x) => x.id === id)!.rect;
+  const cols = Math.max(1, Math.floor((r[2] - 0.4) / 1.2));
+  const x = r[0] + 0.9 + (slot % cols) * 1.2;
+  const y = r[1] + 1.3 + Math.floor(slot / cols) * 1.1;
+  // 人数が多くても区画の内側に収める
+  return { x: Math.min(x, r[0] + r[2] - 0.6), y: Math.min(y, r[1] + r[3] - 0.6) };
 }
+
+const lerp = (a: { x: number; y: number }, b: { x: number; y: number }, t: number) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 
 export function buildView(s: GameState): ViewModel {
   const w = s.world;
-  const tpl = currentTemplate();
+  const def = caseOf(s);
   const sec = nowSec(s);
   const name = (id: string | null) => (id ? s.crew.find((c) => c.id === id)!.name : null);
-
-  // 電力表示：司令室の残量計は定格容量を仮定しているので、実測されるまでずれている
-  let power: ViewModel['power'];
-  const rate = (100 / 180) * (w.loadShed ? 0.6 : 1);
-  if (w.mainPower) power = { label: '主電源', value: 100, sub: '稼働中', warn: false };
-  else if (w.backupCharge <= 0) power = { label: '予備電源', value: 0, sub: '停止', warn: true };
-  else if (s.player.cellMeasured || w.gaugeOffset === 0) {
-    const v = w.backupCharge;
-    power = { label: '予備電源（実測）', value: v, sub: `残り約${Math.floor(v / rate)}分`, warn: v < 25 };
-  } else {
-    const v = Math.min(100, w.backupCharge + w.gaugeOffset);
-    power = { label: '予備電源（推定）', value: v, sub: `設計値で残り約${Math.floor(v / rate)}分`, warn: v < 25 };
-  }
+  const has = (id: string) => s.player.evidence.includes(id);
+  // 計器は司令室で分かることと、手元の証拠だけから作る
+  const mctx = { v: w.vars, o2: w.o2, hull: w.hull, has };
+  const ship = s.ship;
 
   const slots = new Map<RoomId, number>();
   const crew: CrewView[] = s.crew.map((c) => {
     const ls = s.player.lastSeen[c.id]!;
-    let visible = c.alive && commOk(w, c.room);
+    let visible = c.alive && commOk(ship, w, c.room);
     let pos: CrewView['pos'] = null;
     if (visible) {
       const slot = slots.get(c.room) ?? 0;
       slots.set(c.room, slot + 1);
-      pos = center(c.room, slot);
+      pos = center(ship, c.room, slot);
       if (c.task.t === 'move' && c.task.path.length) {
         const next = c.task.path[0];
-        const frac = c.task.progress / (edgeMinutes(c.room, next) * TICKS_PER_MIN);
-        if (!commOk(w, next) && frac > 0.5) { visible = false; pos = null; }
+        const frac = c.task.progress / (edgeMinutes(ship, c.room, next) * TICKS_PER_MIN);
+        if (!commOk(ship, w, next) && frac > 0.5) { visible = false; pos = null; }
         else {
-          const b = center(next, 0);
-          pos = { x: pos.x + (b.x - pos.x) * frac, y: pos.y + (b.y - pos.y) * frac };
+          // 扉を経由して次の区画へ（直線で壁や船外を横切らない）
+          const door = doorPoint(ship, c.room, next);
+          const b = center(ship, next, 0);
+          pos = frac < 0.5 ? lerp(pos, door, frac * 2) : lerp(door, b, (frac - 0.5) * 2);
         }
       }
     }
@@ -136,16 +137,16 @@ export function buildView(s: GameState): ViewModel {
       id: c.id, name: c.name, role: c.role, history: c.history, look: c.look,
       visible,
       room: visible ? c.room : null,
-      roomName: visible ? roomName(c.room) : null,
+      roomName: visible ? roomName(ship, c.room) : null,
       pos,
       activity: visible ? c.task.label : null,
       health: visible ? Math.round(c.health) : ls.health,
       healthLive: visible,
       dead: knownDead,
       trust: visible ? Math.round(c.trust) : ls.trust,
-      lastSeen: `${roomName(ls.room)}（${secToClock(ls.sec)}）`,
-      policy: visible ? policyLabel(c.policy) : ls.policy,
-      pending: c.pendingPolicy ? policyLabel(c.pendingPolicy) : null,
+      lastSeen: `${roomName(ship, ls.room)}（${secToClock(ls.sec)}）`,
+      policy: visible ? policyLabel(s, c.policy) : ls.policy,
+      pending: c.pendingPolicy ? policyLabel(s, c.pendingPolicy) : null,
       skills,
       detained: c.policy.kind === 'detained',
       canTalk: visible && !knownDead,
@@ -153,12 +154,12 @@ export function buildView(s: GameState): ViewModel {
   });
 
   const log: LogView[] = s.player.log.map((l) => ({ ...l, crewName: name(l.crew), clock: secToClock(l.sec), deliveredClock: secToClock(l.deliveredSec) }));
-  const hasTrace = s.player.evidence.includes('coolant_trace');
-  const rooms: RoomView[] = ROOMS.map((r) => ({
+  const marks = def.marks?.(mctx) ?? [];
+  const rooms: RoomView[] = ship.rooms.map((r) => ({
     id: r.id, name: r.name, rect: r.rect,
-    comm: commOk(w, r.id),
+    comm: commOk(ship, w, r.id),
     fire: !!w.fire && w.fire.room === r.id, // 固定の火災センサーは中継器と無関係に届く
-    wet: r.id === 'powerroom' && hasTrace && !w.resolved,
+    marks: marks.filter((m) => m.room === r.id).map((m) => ({ text: m.text, color: m.color })),
   }));
 
   // 作戦の完了・中止は報告が届いて初めて分かる
@@ -167,19 +168,19 @@ export function buildView(s: GameState): ViewModel {
     const status = p.status === 'waiting' ? '通信待ち'
       : !known ? '実行中'
       : p.status === 'done' ? '完了報告あり' : '中止';
-    return { label: PLAN_LABEL[p.kind], status, who: name(p.executor) };
+    return { label: planLabel(s, p.kind), status, who: name(p.executor) };
   });
 
   return {
     phase: s.phase,
     clock: secToClock(sec),
-    elapsedMin: Math.floor((sec - START_SEC) / 60),
-    power,
-    o2: Math.round(w.o2),
-    hull: Math.round(w.hull),
+    elapsedMin: Math.floor((sec - s.startSec) / 60),
+    meters: def.meters(mctx),
     stores: { food: w.food, morale: w.morale, ...w.supplies },
     rooms,
+    edges: ship.edges.map(([a, b]) => ({ a, b, door: doorPoint(ship, a, b) })),
     crew,
+    respond: { label: def.respond.label, desc: def.respond.desc },
     log,
     unread: s.player.unread,
     evidence: s.player.evidence.map((id) => {
@@ -192,22 +193,17 @@ export function buildView(s: GameState): ViewModel {
     plans: planView,
     pendingNotices: s.player.pendingPolicyNotice.map((id) => {
       const c = s.crew.find((x) => x.id === id)!;
-      return { crew: id, name: c.name, policy: c.pendingPolicy ? policyLabel(c.pendingPolicy) : '' };
+      return { crew: id, name: c.name, policy: c.pendingPolicy ? policyLabel(s, c.pendingPolicy) : '' };
     }).filter((x) => x.policy),
     openConfirms: log.filter((l) => l.kind === 'confirm' && !l.answered),
     form: {
-      causes: tpl.causeOptions,
-      orderCards: seededOrder(s.truth.orderCards.map((c) => ({ id: c.id, label: c.label })), s.seed),
-      plans: (Object.keys(PLAN_LABEL) as PlanKind[]).map((id) => ({
-        id, label: PLAN_LABEL[id],
-        warn: id === 'restartNow' ? '原因が残ったまま通電すると、再遮断や発火のおそれがある'
-          : id === 'dryRestart' ? '漏れの元が残っていれば、また濡れて遮断するかもしれない'
-          : id === 'detain' ? '「関係人物」で選んだ乗員を拘束する。見当違いなら乗員の信頼を損なう' : undefined,
-      })),
+      causes: seededOrder(def.causeOptions, s.genSeed + 7),
+      orderCards: seededOrder(s.truth.orderCards.map((c) => ({ id: c.id, label: c.label })), s.genSeed),
+      plans: planDefs(s).map((p) => ({ id: p.id, label: p.label, warn: p.warn })),
       crew: s.crew.map((c) => ({ id: c.id, name: c.name })),
     },
-    briefing: tpl.briefing,
-    title: tpl.truth.title,
+    briefing: def.briefing,
+    title: s.truth.title,
     resolved: w.resolved,
     result: s.phase === 'ended' ? evaluateCase(s) : null,
   };

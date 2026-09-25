@@ -2,6 +2,7 @@
 import type { Action, CrewId, EvidenceId, Hypothesis, Policy } from '../core/types';
 import type { GameState } from '../core/types';
 import { generateCase } from '../gen/generate';
+import { TEMPLATES } from '../gen/registry';
 import { applyAction, step, type StepResult } from '../sim/sim';
 import { buildView, type ViewModel } from '../view/view';
 import { clearSnapshot, loadSnapshot, saveSnapshot, saveVoyageCase, loadSettings, saveSettings, type Settings } from '../save/save';
@@ -24,8 +25,24 @@ class Game {
 
   hasSnapshot(): boolean { return !!loadSnapshot(); }
 
-  newGame(seed = 20260925) {
-    this.s = generateCase(seed);
+  // 事件一覧（題名だけ。原因の種類は見せない）
+  cases(): { id: string; title: string }[] { return TEMPLATES.map((t) => ({ id: t.id, title: t.title })); }
+
+  // 事件番号：「テンプレート番号-シード」。友人と同じ事件を遊ぶのに使う
+  caseCode(): string {
+    if (!this.s) return '';
+    const i = TEMPLATES.findIndex((t) => t.id === this.s!.templateId);
+    return `${String(i + 1).padStart(2, '0')}-${this.s.seed}`;
+  }
+  parseCode(code: string): { seed: number; templateId: string } | null {
+    const m = code.trim().match(/^(\d{1,2})\s*[-ー－]\s*(\d{1,10})$/);
+    if (!m) return null;
+    const t = TEMPLATES[Number(m[1]) - 1];
+    return t ? { seed: Number(m[2]) >>> 0, templateId: t.id } : null;
+  }
+
+  newGame(seed = Math.floor(Math.random() * 1e9), templateId?: string) {
+    this.s = generateCase(seed, templateId);
     this.voyageSaved = false;
     this.running = false;
     this.emit(null, []);
@@ -77,6 +94,29 @@ class Game {
     const L = this.s.player.board.links;
     const i = L.findIndex((l) => (l.a === a && l.b === b) || (l.a === b && l.b === a));
     if (i >= 0) L.splice(i, 1); else L.push({ a, b, label: '' });
+    this.persist();
+    this.emit(null, []);
+  }
+  addNote(text: string, x: number, y: number) {
+    if (!this.s || !text.trim()) return;
+    const b = this.s.player.board;
+    const id = 'note:' + (b.notes.reduce((m, n) => Math.max(m, Number(n.id.slice(5)) || 0), 0) + 1);
+    b.notes.push({ id, text: text.slice(0, 120) });
+    b.cards.push({ id, x: Math.round(x), y: Math.round(y) });
+    this.persist();
+    this.emit(null, []);
+  }
+  editNote(id: string, text: string | null) {
+    if (!this.s) return;
+    const b = this.s.player.board;
+    if (text === null || !text.trim()) {
+      b.notes = b.notes.filter((n) => n.id !== id);
+      b.cards = b.cards.filter((c) => c.id !== id);
+      b.links = b.links.filter((l) => l.a !== id && l.b !== id);
+    } else {
+      const n = b.notes.find((x) => x.id === id);
+      if (n) n.text = text.slice(0, 120);
+    }
     this.persist();
     this.emit(null, []);
   }

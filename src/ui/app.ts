@@ -9,7 +9,6 @@ import { renderHypothesis, resetDraft } from './hypo';
 import { renderResult } from './result';
 import { exportVoyage, importVoyage, loadVoyage } from '../save/save';
 import type { CrewId, Policy, RoomId } from '../core/types';
-import { ROOMS } from '../sim/ship';
 
 type Tab = 'ship' | 'crew' | 'log' | 'board' | 'hypo';
 const ui = {
@@ -56,18 +55,50 @@ function showTitle() {
     { skin: 2, hair: 0, hairStyle: 0, suit: 1, eyes: 0 }, { skin: 3, hair: 2, hairStyle: 3, suit: 3, eyes: 1 },
   ];
   r.appendChild(h('div', { class: 'screen title-screen' },
-    h('h1', { class: 'logo' }, '宇宙船ミステリー', h('small', {}, '仮題 ／ 試作版 第1話「消えた電力」')),
+    h('h1', { class: 'logo' }, '宇宙船ミステリー', h('small', {}, `仮題 ／ 試作版（事件 ${game.cases().length} 種）`)),
     h('div', { style: { display: 'flex', gap: '8px' } }, faces.map((f) => h('img', { class: 'portrait', src: portraitURL(f, 4), width: 72, height: 72, alt: '' }))),
     h('p', { class: 'muted' }, 'あなたは船長。司令室から乗員に方針を与え、届いた報告と証拠から原因を突き止める。'),
     game.hasSnapshot() ? h('button', { class: 'btn primary', onclick: () => { if (game.resume()) enterPlay(); } }, '続きから') : null,
-    h('button', { class: 'btn' + (game.hasSnapshot() ? '' : ' primary'), onclick: () => {
-      if (game.hasSnapshot()) confirmSheet('はじめから', '事件中の続きは消えます。よろしいですか。', 'はじめから', () => { game.newGame(); resetDraft(); showBriefing(); }, true);
-      else { game.newGame(); resetDraft(); showBriefing(); }
-    } }, 'はじめから'),
+    h('button', { class: 'btn' + (game.hasSnapshot() ? '' : ' primary'), onclick: () => startNew() }, '新しい事件（ランダム）'),
+    h('button', { class: 'btn', onclick: () => chooseSheet() }, '事件を選ぶ／事件番号で始める'),
     h('button', { class: 'btn', onclick: () => settingsSheet() }, '設定・航海記録'),
     !standalone && isIOS ? h('div', { class: 'hint' }, 'iPhoneでは、共有ボタンから「ホーム画面に追加」してから遊ぶと、オフラインでも起動でき、保存データも消えにくくなります。') : null,
     !standalone && !isIOS ? h('div', { class: 'hint' }, '一度読み込めばオフラインでも遊べます。保存はこの端末のこのブラウザ内だけです。') : null,
   ));
+}
+
+// 事件の生成は検証つきで少し時間がかかるので、表示を出してから行う
+function startNew(templateId?: string, seed?: number) {
+  const go = () => {
+    const r = root();
+    clear(r);
+    r.appendChild(h('div', { class: 'screen title-screen' }, h('p', { class: 'muted' }, '事件を組み立てて、辻褄を確かめています…')));
+    setTimeout(() => {
+      try { game.newGame(seed, templateId); resetDraft(); showBriefing(); }
+      catch (e) { showTitle(); confirmSheet('事件を作れなかった', String((e as Error).message), 'わかった', () => {}); }
+    }, 30);
+  };
+  if (game.hasSnapshot()) confirmSheet('新しい事件', '事件中の続きは消えます。よろしいですか。', '始める', go, true);
+  else go();
+}
+
+function chooseSheet() {
+  const inp = h('input', { type: 'text', inputmode: 'numeric', placeholder: '例：03-123456789' }) as HTMLInputElement;
+  const msg = h('p', { class: 'small muted' });
+  sheet(h('div', {},
+    h('h2', {}, '事件を選ぶ'),
+    h('p', { class: 'small muted' }, '題名だけを見て選べます。登場人物や部屋割り、細部は毎回変わります。'),
+    h('div', { style: { display: 'grid', gap: '6px' } }, game.cases().map((c, i) => h('button', { class: 'opt', onclick: () => { closeSheet(); startNew(c.id); } }, `${String(i + 1).padStart(2, '0')}　${c.title}`))),
+    h('h2', { style: { marginTop: '16px' } }, '事件番号で始める'),
+    h('p', { class: 'small muted' }, '友人と同じ事件を遊ぶときは、ブリーフィングに出る事件番号を伝えてください。'),
+    inp,
+    h('button', { class: 'btn primary', style: { marginTop: '8px' }, onclick: () => {
+      const p = game.parseCode(inp.value);
+      if (!p) { msg.textContent = '「03-123456789」の形で入力してください。'; return; }
+      closeSheet();
+      startNew(p.templateId, p.seed);
+    } }, 'この番号で始める'),
+    msg));
 }
 
 function settingsSheet() {
@@ -105,19 +136,20 @@ function showBriefing() {
   clear(r);
   r.appendChild(h('div', { class: 'screen' },
     h('p', { class: 'muted small' }, 'ブリーフィング'),
-    h('h1', { style: { margin: '0 0 8px', fontSize: '24px' } }, `事件：${v.title}`),
+    h('h1', { style: { margin: '0 0 4px', fontSize: '24px' } }, `事件：${v.title}`),
+    h('p', { class: 'small muted', style: { margin: '0 0 8px' } }, `事件番号 ${game.caseCode()}（友人に伝えると同じ事件を遊べる）`),
     h('div', { class: 'card' }, v.briefing.map((b) => h('p', { style: { margin: '4px 0' } }, b))),
     h('h3', {}, '乗員'),
     h('p', { class: 'small muted' }, '技能や性格は最初は分からない。仕事ぶりや会話から見えてくる。'),
     v.crew.map((c) => h('div', { class: 'crew-row' },
       h('img', { src: portraitURL(c.look), alt: '' }),
-      h('div', { class: 'body' }, h('div', { class: 'name' }, `${c.name}　${c.role}`), h('div', { class: 'small muted' }, `経歴：${c.history}`), h('div', { class: 'small' }, `現在地：${c.roomName ?? '不明'}`)))),
+      h('div', { class: 'body' }, h('div', { class: 'name' }, `${c.name}　${c.role}`), h('div', { class: 'small muted' }, `経歴：${c.history}`), h('div', { class: 'small' }, `現在地：${c.roomName ?? '通信断で不明'}`)))),
     h('div', { class: 'card small' },
       h('b', {}, '操作のしかた'),
       h('p', { style: { margin: '4px 0' } }, '・乗員をタップして方針を与える。方針は変えるまで続く。'),
-      h('p', { style: { margin: '4px 0' } }, '・▶で時間が進む。ボードや仮説を開いている間、乗員画面や記録を見ている間は止まる。'),
+      h('p', { style: { margin: '4px 0' } }, '・▶で時間が進む。船内の画面以外（乗員・記録・メモ・仮説）を開いている間は止まる。'),
       h('p', { style: { margin: '4px 0' } }, '・通信断の区画にいる乗員の様子は分からない。戻ってきたときに経過を報告する。'),
-      h('p', { style: { margin: '4px 0' } }, '・証拠はボードで自由につなげる。答え合わせは提出した仮説と、その結果でだけ分かる。')),
+      h('p', { style: { margin: '4px 0' } }, '・「メモ」は考えを整理する自由なメモ帳。証拠を並べて線を引いたり、自分のメモを貼ったりできる。採点には使わない。答え合わせは「仮説」で提出した結果でだけ分かる。')),
     h('button', { class: 'btn primary', onclick: () => { game.dispatch({ type: 'begin' }); enterPlay(); } }, '司令室へ'),
   ));
 }
@@ -178,9 +210,7 @@ function updateHud(v: ViewModel) {
   hud.speed.textContent = '×' + game.settings.speed;
   clear(hud.meters);
   hud.meters.append(
-    meter(v.power.label, v.power.value, `${Math.round(v.power.value)}%`, v.power.value <= 0 ? 'bad' : v.power.warn ? 'warn' : '', v.power.sub),
-    meter('酸素', v.o2, v.o2 + '%', v.o2 < 25 ? 'bad' : v.o2 < 50 ? 'warn' : ''),
-    meter('船体', v.hull, v.hull + '%', v.hull < 40 ? 'bad' : v.hull < 70 ? 'warn' : ''),
+    ...v.meters.map((m) => meter(m.label, m.value, m.text, m.level, m.sub)),
   );
 }
 
@@ -191,7 +221,7 @@ function renderTabs(v: ViewModel) {
     ['ship', '▦', '船内', v.openConfirms.length + v.pendingNotices.length],
     ['crew', '☺', '乗員', 0],
     ['log', '✉', '記録', v.unread],
-    ['board', '◈', 'ボード', 0],
+    ['board', '◈', 'メモ', 0],
     ['hypo', '✎', '仮説', 0],
   ];
   for (const [id, ic, label, badge] of items) {
@@ -351,11 +381,11 @@ function crewSheet(id: CrewId) {
   const roomPicker = (kind: 'investigate' | 'guard') => {
     clear(body);
     body.append(h('h2', {}, kind === 'investigate' ? 'どこを調べるか' : 'どこを警備するか'),
-      h('div', { class: 'opt-grid' }, ROOMS.map((r) => h('button', { class: 'opt', onclick: () => setP({ kind, room: r.id as RoomId }) }, r.name))));
+      h('div', { class: 'opt-grid' }, v.rooms.map((r) => h('button', { class: 'opt', onclick: () => setP({ kind, room: r.id as RoomId }) }, r.name))));
   };
   const opts: [string, string, () => void][] = [
     ['待機', '今いる場所で待つ', () => setP({ kind: 'standby' })],
-    ['電源を復旧', '配電室へ向かい、点検と復旧作業', () => setP({ kind: 'restorePower' })],
+    [v.respond.label, v.respond.desc, () => setP({ kind: 'respond' })],
     ['区画を調査', '指定した区画で記録や痕跡を探す', () => roomPicker('investigate')],
     ['通信中継器を復旧', '機関区の中継器をつなぎ直す', () => setP({ kind: 'repairRelay' })],
     ['負傷者を救護', '負傷者のもとへ行き手当てする', () => setP({ kind: 'medical' })],
