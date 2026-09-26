@@ -23,7 +23,7 @@ export const DUST: CaseTemplate = {
     const Fs = T0 - g.int(280, 320) * 60;
     const start = T0 + g.int(40, 60) * 60;
     const grp = g.groupOf('lifesupport');
-    const relayRoom = g.rooms.find((r) => r.group === grp && r.rect[1] === 4)!.id;
+    const relayRoom = g.relayOf(grp);
     const crewInit: Record<string, { room: string; known?: string[]; hides?: string[]; label?: string }> = {
       [SC.id]: { room: 'lab', known: ['F_skip'], hides: ['F_skip'] },
       [F.id]: { room: 'corridor', known: ['F_fan'] },
@@ -72,7 +72,7 @@ export const DUST: CaseTemplate = {
           ev('sample_bag', '試料袋', '試料袋の外側にも同じ灰色の粉。袋の口が静電気で閉じない。', { room: 'lab', source: 'trace', skill: 'inv', minSkill: 1, work: 3, fact: 'F_bag', where: `${g.rn('lab')}の試料棚` }),
           ev('lab_note', '観測メモ', '「日照側の表面では、帯電した微粒子が浮いている可能性が高い。近づくときは注意」', { room: 'lab', source: 'record', skill: 'inv', minSkill: 2, work: 3, fact: 'F_note', where: `${g.rn('lab')}の端末` }),
           ev('fan_stop', 'ファンの操作記録', `${T(Fs)} 3番ファンを手動停止（${F.name}：騒音のため）。`, { room: 'lifesupport', work: 2, fact: 'F_fan', where: '生命維持室の換気制御盤' }),
-          ev('relay_dust', '中継器の接点', '中継器の接点に灰色の粉が付き、小さな火花の跡がある。', { room: relayRoom, source: 'trace', work: 3, fact: 'F_relay_dust', where: `${g.rn(relayRoom)}の中継器` }),
+          ev('relay_dust', '中継器の接点', '中継器の接点に灰色の粉が付き、小さな火花の跡がある。', { relay: true, room: relayRoom, source: 'trace', work: 3, fact: 'F_relay_dust', where: `${g.rn(relayRoom)}の中継器` }),
           said('sc_claim', SC.name, '船外活動のあとの除塵は、ちゃんとやりました', 'F_sc_lie', `${SC.name}から話を聞く`),
           { ...said('sc_confess', SC.name, '……急いでいて、除塵を省きました。まさか中まで入り込んで、こんなことになるなんて', 'F_skip', `${SC.name}に船外活動の記録か試料袋を突きつける`), title: `${SC.name}の告白` },
           said('w_claim', W.name, '焦げ臭い気がしました。どこかで火がくすぶっているんじゃないですか', 'F_w_smell', `${W.name}から話を聞く`),
@@ -106,6 +106,12 @@ export const DUST: CaseTemplate = {
         { id: 'filter_wear', label: '吸気フィルタが寿命を迎えた', category: 'accident' },
         { id: 'mold', label: '船内でカビの胞子が大量に発生した', category: 'phenomenon' },
       ],
+      unlock: {
+        'cause:charged_dust': ['dust_filter', 'eva_log', 'sample_bag'], 'cause:smolder': ['smoke_alarms', 'w_claim'], 'cause:fan_sabotage': ['fan_stop', 'f_claim'],
+        'cause:filter_wear': ['flow_log', 'dust_filter'], 'cause:mold': ['dust_filter'],
+        'order:o_fan': ['fan_stop', 'f_claim'], 'order:o_approach': ['approach'], 'order:o_eva': ['eva_log'], 'order:o_alarm': ['smoke_alarms'],
+        'plan:cleanSeal': ['dust_filter', 'eva_log'], 'plan:swapFilter': ['flow_log', 'dust_filter'], 'plan:fireSup': ['smoke_alarms'], 'plan:restartFan': ['fan_stop', 'f_claim'],
+      },
       respond: { label: '換気を点検', desc: '生命維持室で換気とフィルタを調べる', room: 'lifesupport', waitLabel: '生命維持室で換気を見張っている' },
       fieldActions: [
         { id: 'brush', room: 'lifesupport', needs: 'F_dust', label: 'フィルタの粉を払い落とす', ask: 'フィルタに粉が張り付いています。いったん払い落としてよいですか', why: '換気が弱まる一方なので、まず流れを戻すべきだと判断', action: 'brush' },

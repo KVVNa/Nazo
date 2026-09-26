@@ -1,21 +1,10 @@
 // 事件テンプレートの書式。テンプレートは「先に真相を決め、証拠と証言を派生させる」手作りの型で、
 // シードで変わるのは型の中の変数（関係者、区画、時刻、証言者、通信断の系統など）だけ。
 import type {
-  Category, Crew, CrewId, EvidenceDef, GameState, Group, Hypothesis, Look, PlanState, Policy, RoomDef, RoomId, Skill, Truth, TruthEvent, World,
+  Category, Crew, CrewId, EvidenceDef, FixedSeed, GameState, Group, Hypothesis, PlanState, Policy, RoomDef, RoomId, Skill, Truth, TruthEvent, World,
 } from '../core/types';
 
-export interface CrewSeed {
-  id: CrewId;
-  name: string;
-  roleId: string;
-  role: string;
-  history: string;
-  skills: Record<Skill, number>;
-  exp: number;
-  trust: number;
-  bold: boolean;
-  look: Look;
-}
+export type CrewSeed = FixedSeed;
 
 export interface GenCtx {
   rand(): number;
@@ -23,12 +12,14 @@ export interface GenCtx {
   pick<T>(a: T[]): T;
   shuffle<T>(a: T[]): T[];
   crew: CrewSeed[];
+  cast?: CrewId; // 航海モード：関係人物に選びたい乗員
   byRole(roleId: string): CrewSeed | undefined;
   others(...exclude: (CrewSeed | undefined)[]): CrewSeed[];
   rooms: RoomDef[];
   has(room: RoomId): boolean;
   rn(room: RoomId): string; // 区画名
   groupOf(room: RoomId): Group;
+  relayOf(group: Group): RoomId; // その系統の通信中継器がある区画
   hm(h: number, m: number): number;
   clock(sec: number): string;
 }
@@ -47,7 +38,7 @@ export interface Api {
   rn(room: RoomId): string;
   crew(id: CrewId): Crew;
   crews(): Crew[];
-  log(text: string, kind?: 'system' | 'danger', pause?: string): void;
+  log(text: string, kind?: 'system' | 'danger', pause?: string, evidence?: string[]): void; // evidence は司令室に直接届く証拠
   alarm(text: string, pause?: string): void;
   report(c: Crew, text: string, o?: { evidence?: string[]; reason?: string; important?: boolean; kind?: 'report' | 'danger' | 'autonomy' }): void;
   learn(c: Crew, fact: string): void;
@@ -101,6 +92,11 @@ export interface EpilogueCtx {
 }
 
 export interface CaseDef {
+  title?: string; // 組み立て式の事件は、手口に合わせて題名を変える
+  // 人物の絞り込み（検証用）：証拠ごとに「この証拠と矛盾しない乗員」。必須証拠の分をすべて重ねると関係人物だけが残る
+  identify?: { evidence: string; suspects: CrewId[] }[];
+  // 誤った原因の候補は、どの証拠で否定できるか（検証用）
+  causeRefutes?: Record<string, string[]>;
   startSec: number;
   deadlineSec: number;
   briefing: string[];
@@ -117,6 +113,8 @@ export interface CaseDef {
   statedTimes?: number[]; // 文章に出てくるが出来事そのものではない時刻（範囲の端、予報、本人の思い違いなど）
   vars: Record<string, number>;
   causeOptions: { id: string; label: string; category: Category }[];
+  // 仮説の選択肢を浮上させる手がかり。キーは 'cause:ID' / 'order:ID' / 'plan:ID'、値はどれか1つを得れば浮上する証拠
+  unlock: Record<string, string[]>;
   respond: { label: string; desc: string; room: RoomId; waitLabel: string };
   fieldActions: FieldAction[];
   plans: PlanDef[];
@@ -155,6 +153,7 @@ export function ev(id: string, title: string, text: string, o: Partial<EvidenceD
     key: o.key ?? false,
     where: o.where ?? '',
     destroyedByFire: o.destroyedByFire,
+    ...(o.relay ? { relay: true } : {}),
   };
 }
 export function said(id: string, name: string, text: string, fact: string, where: string, key = false): EvidenceDef {

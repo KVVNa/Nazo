@@ -106,6 +106,12 @@ export const FOOD: CaseTemplate = {
         { id: 'alien_microbe', label: '採取した試料の未知の微生物が広がった', category: 'phenomenon' },
         { id: 'allergy', label: '新しい食材に全員がアレルギーを起こした', category: 'accident' },
       ],
+      unlock: {
+        'cause:spoiled_food': ['fridge_log', 'leftovers', 'menu'], 'cause:water_contam': ['water_warn', 'w_claim'], 'cause:poisoning': ['menu'],
+        'cause:alien_microbe': ['symptoms'], 'cause:allergy': ['menu'],
+        'order:o_fridge': ['fridge_log', 'c_confess'], 'order:o_reset': ['fridge_log', 'c_confess'], 'order:o_dinner': ['menu', 'h_claim'], 'order:o_onset': ['sick_alarm'],
+        'plan:treatFull': ['leftovers', 'fridge_log'], 'plan:rehydrate': ['sick_alarm'], 'plan:flushWater': ['water_warn', 'w_claim'], 'plan:searchPoison': ['sick_alarm'],
+      },
       respond: { label: '患者を診る', desc: '医務室で発症者を診察する', room: 'medbay', waitLabel: '医務室で発症者を見守っている' },
       fieldActions: [
         { id: 'fluids', room: 'medbay', needs: 'F_symptoms', label: '発症者に補液を始める', ask: '脱水が進んでいます。発症者全員に補液を始めてよいですか。医療品を使います', why: '脱水を止めるのが最優先だと判断', skill: 'med', minSkill: 1, action: 'rehydrate' },

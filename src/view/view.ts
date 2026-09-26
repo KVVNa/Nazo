@@ -3,7 +3,7 @@
 import type { BoardState, CrewId, GameState, LogEntry, RoomId, Ship, Skill } from '../core/types';
 import { secToClock } from '../core/rng';
 import { commOk, doorPoint, edgeMinutes, roomName, TICKS_PER_MIN } from '../sim/ship';
-import { nowSec, policyLabel, planDefs, planLabel } from '../sim/sim';
+import { nowSec, policyLabel, planDefs, planLabel, unlockedKeys } from '../sim/sim';
 import { caseOf } from '../gen/registry';
 import { evaluateCase, type CaseResult } from '../judge/judge';
 import type { Meter } from '../gen/case_api';
@@ -69,6 +69,7 @@ export interface ViewModel {
     causes: { id: string; label: string; category: string }[];
     orderCards: { id: string; label: string }[];
     plans: { id: string; label: string; warn?: string }[];
+    hidden: { causes: number; orderCards: number; plans: number };
     crew: { id: CrewId; name: string }[];
   };
   briefing: string[];
@@ -108,6 +109,7 @@ export function buildView(s: GameState): ViewModel {
   // 計器は司令室で分かることと、手元の証拠だけから作る
   const mctx = { v: w.vars, o2: w.o2, hull: w.hull, has };
   const ship = s.ship;
+  const open = new Set(unlockedKeys(s));
 
   const slots = new Map<RoomId, number>();
   const crew: CrewView[] = s.crew.map((c) => {
@@ -197,9 +199,15 @@ export function buildView(s: GameState): ViewModel {
     }).filter((x) => x.policy),
     openConfirms: log.filter((l) => l.kind === 'confirm' && !l.answered),
     form: {
-      causes: seededOrder(def.causeOptions, s.genSeed + 7),
-      orderCards: seededOrder(s.truth.orderCards.map((c) => ({ id: c.id, label: c.label })), s.genSeed),
-      plans: planDefs(s).map((p) => ({ id: p.id, label: p.label, warn: p.warn })),
+      // 手がかりで浮上した選択肢だけを出す（拘束はいつでも選べる）
+      causes: seededOrder(def.causeOptions.filter((c) => open.has('cause:' + c.id)), s.genSeed + 7),
+      orderCards: seededOrder(s.truth.orderCards.filter((c) => open.has('order:' + c.id)).map((c) => ({ id: c.id, label: c.label })), s.genSeed),
+      plans: planDefs(s).filter((p) => p.id === 'detain' || open.has('plan:' + p.id)).map((p) => ({ id: p.id, label: p.label, warn: p.warn })),
+      hidden: {
+        causes: def.causeOptions.filter((c) => !open.has('cause:' + c.id)).length,
+        orderCards: s.truth.orderCards.filter((c) => !open.has('order:' + c.id)).length,
+        plans: def.plans.filter((p) => !open.has('plan:' + p.id)).length,
+      },
       crew: s.crew.map((c) => ({ id: c.id, name: c.name })),
     },
     briefing: def.briefing,

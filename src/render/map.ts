@@ -3,7 +3,7 @@ import type { ViewModel, RoomView } from '../view/view';
 import { drawMini } from './sprites';
 
 export const MAP_W = 13;
-export const MAP_H = 18;
+export const MAP_H = 21;
 const OX = 0.5, OY = 0.5;
 
 const COL = {
@@ -26,7 +26,8 @@ let stars: [number, number][] = [];
 
 // 横幅と、画面の高さの両方に収まるタイルの大きさ
 export function layoutTile(cssW: number): number {
-  const byH = typeof window !== 'undefined' ? (window.innerHeight - 250) / MAP_H : Infinity;
+  // 縦長の船なので、小さくなりすぎるときは画面からはみ出してスクロールさせる
+  const byH = typeof window !== 'undefined' ? Math.max(24, (window.innerHeight - 250) / MAP_H) : Infinity;
   return Math.max(16, Math.floor(Math.min(cssW / MAP_W, byH)));
 }
 

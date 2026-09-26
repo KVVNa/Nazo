@@ -37,7 +37,7 @@ export const SEU: CaseTemplate = {
     const glitchRooms = g.shuffle(g.rooms.map((r) => r.id).filter((r) => GLITCH[r])).slice(0, 4);
     const gtimes = glitchRooms.map((_, i) => T0 + (5 + i * 11 + g.int(0, 4)) * 60);
     const G = g.pick(['port', 'starboard', 'lower'] as Group[]);
-    const relayRoom = g.rooms.find((r) => r.group === G && (G === 'lower' ? r.id === 'engineering' : r.rect[1] === 4))!.id;
+    const relayRoom = g.relayOf(G);
     const relayAt = T0 + g.int(25, 35) * 60;
     const noticeRoom = g.has('comms') ? 'comms' : 'bridge';
     const lsRoom = g.has('lifesupport') ? 'lifesupport' : 'engineering';
@@ -120,6 +120,12 @@ export const SEU: CaseTemplate = {
         { id: 'software', label: '制御ソフトの更新の不具合', category: 'accident' },
         { id: 'virus', label: '外から入り込んだ不正なプログラム', category: 'sabotage' },
       ],
+      unlock: {
+        'cause:spe_seu': ['rad_monitor', 'flare_notice', 'memory_err'], 'cause:sabotage_x': ['y_claim', 'glitch_list'], 'cause:power_surge': ['glitch_list'],
+        'cause:software': ['memory_err'], 'cause:virus': ['glitch_list'],
+        'order:o_notice': ['flare_notice'], 'order:o_protons': ['rad_monitor'], 'order:o_first': ['glitch_list'], 'order:o_relay': ['glitch_list'],
+        'plan:shelterScrub': ['rad_monitor', 'dosimeter'], 'plan:scrubOnly': ['memory_err', 'e_claim'], 'plan:shelterOnly': ['rad_monitor', 'dosimeter'], 'plan:hunt': ['glitch_list'],
+      },
       respond: { label: '誤作動の点検', desc: '機関区の制御装置を調べる', room: 'engineering', waitLabel: '機関区で制御装置を見張っている' },
       fieldActions: [
         { id: 'scrub', room: 'engineering', needs: 'F_mem', label: '制御装置を冗長モードで再起動', ask: '制御装置の記憶がおかしくなっています。冗長モードで再起動してよいですか。電力を少し多く使います', why: '誤りを打ち消す仕組みを使うのが先だと判断', skill: 'mech', minSkill: 2, action: 'scrub' },

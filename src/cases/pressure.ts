@@ -12,7 +12,7 @@ export const PRESSURE: CaseTemplate = {
   needLower: ['airlock'],
   build(g) {
     const E = g.byRole('engineer')!;
-    const R = find(g, (c) => ['cargo', 'cook', 'security'].includes(c.roleId), [E]);
+    const R = find(g, (c) => ['cargo', 'cook', 'security'].includes(c.roleId), [E], g.cast);
     const S = find(g, () => true, [E, R]);
     const W = find(g, () => true, [E, R, S]);
     const T = g.clock;
@@ -102,6 +102,12 @@ export const PRESSURE: CaseTemplate = {
         { id: 'fatigue', label: '船体の金属疲労でひびが入った', category: 'accident' },
         { id: 'thermal', label: '恒星の熱で外板の継ぎ目が開いた', category: 'phenomenon' },
       ],
+      unlock: {
+        'cause:micrometeoroid': ['impact_log', 'hiss', 'hole'], 'cause:airlock_seal': ['seal_flag', 's_claim'], 'cause:vent_valve': ['press_alarm'],
+        'cause:fatigue': ['hiss'], 'cause:thermal': ['press_log'],
+        'order:o_stack': ['stow_plan', 'r_confess'], 'order:o_band': ['debris_fc'], 'order:o_hit': ['impact_log', 'w_knock'], 'order:o_alarm': ['press_alarm'],
+        'plan:patchRepress': ['hiss', 'hole'], 'plan:isolate': ['hiss', 'impact_log'], 'plan:repressNow': ['press_alarm'], 'plan:fixAirlock': ['seal_flag', 's_claim'],
+      },
       respond: { label: '漏れ箇所を探す', desc: 'まず漏れの疑いが強いエアロックを調べる', room: 'airlock', waitLabel: 'エアロックで次の指示待ち' },
       fieldActions: [
         { id: 'moveCrates', room: 'cargo', needs: 'F_hiss', label: '木箱をどかして音の元を探す', ask: '木箱の裏から空気の音がします。積荷を崩してどかしてよいですか', why: '音の元を見ないと手の打ちようがないと判断', action: 'moveCrates' },
@@ -153,7 +159,7 @@ export const PRESSURE: CaseTemplate = {
         }
         a.setComm(grp, !v['relay_' + grp]);
         a.w.o2 = v.press;
-        a.w.hull = 98;
+        if (a.once('holehit')) a.w.hull = Math.max(0, a.w.hull - 2); // 貫通の傷
       },
       meters: (m) => [
         pct('船内気圧', m.v.press, 90, 80),

@@ -1,7 +1,7 @@
 // 犯罪（同情できる動機）：怪我を隠していた乗員が鎮痛剤を盗み、飲みすぎて下層で倒れている。
 import type { CaseTemplate } from '../gen/case_api';
 import { ev, said } from '../gen/case_api';
-import { find, genericEpilogue, hullMeter, inComm, pct, placeRest } from './common';
+import { find, genericEpilogue, hullMeter, inComm, pct, placeRest, line } from './common';
 
 export const PAINKILLER: CaseTemplate = {
   id: 'painkiller',
@@ -12,7 +12,7 @@ export const PAINKILLER: CaseTemplate = {
   build(g) {
     const M = g.byRole('medic')!;
     const E = g.byRole('engineer')!;
-    const P = find(g, (c) => ['cargo', 'security', 'cook'].includes(c.roleId), [M, E]);
+    const P = find(g, (c) => ['cargo', 'security', 'cook'].includes(c.roleId), [M, E], g.cast);
     const Q = find(g, () => true, [M, E, P]);
     const Z = find(g, () => true, [M, E, P, Q]);
     const T = g.clock;
@@ -45,14 +45,14 @@ export const PAINKILLER: CaseTemplate = {
       truth: {
         cause: 'overdose_theft',
         events: [
-          { id: 'ev_injury', sec: T0 - 3 * 86400, room: 'cargo', actor: P.id, text: `3日前、${P.name}は荷役中に重い箱を落として手首と腰を痛めた。契約を切られるのが怖くて、申告しなかった。`, causes: ['ev_theft'] },
+          { id: 'ev_injury', sec: T0 - 3 * 86400, room: 'cargo', actor: P.id, text: line(P, 'painkiller.injury', `3日前、${P.name}は荷役中に重い箱を落として手首と腰を痛めた。契約を切られるのが怖くて、申告しなかった。`), causes: ['ev_theft'] },
           { id: 'ev_theft', sec: T0, room: 'medbay', actor: P.id, text: `${T(T0)}、${P.name}は以前盗み見た${M.name}の暗証番号で薬品庫を開け、鎮痛剤を持ち出した。`, causes: ['ev_enter'] },
           { id: 'ev_enter', sec: enter, room: 'waterplant', actor: P.id, text: `${T(enter)}、${P.name}は人目を避けて水再生室に入り、痛みに耐えかねて多めに飲んだ。`, causes: ['ev_collapse'] },
           { id: 'ev_collapse', sec: collapse, room: 'waterplant', actor: P.id, text: `${T(collapse)}ごろ、${P.name}は呼吸が浅くなり、意識を失った。`, causes: [] },
           { id: 'ev_maint', sec: start - 20 * 60, room: 'engineering', actor: E.id, text: `${E.name}は予定どおり下層の中継器を整備していた（無関係）。`, causes: [] },
         ],
         orderCards: [
-          { id: 'o_injury', label: '荷役中に箱が落ちる', sec: T0 - 3 * 86400 },
+          { id: 'o_injury', label: line(P, 'painkiller.o_injury', '荷役中に箱が落ちる'), sec: T0 - 3 * 86400 },
           { id: 'o_theft', label: '薬品庫が開けられる', sec: T0 },
           { id: 'o_enter', label: '誰かが水再生室に入る', sec: enter },
           { id: 'o_collapse', label: '誰かが倒れる', sec: collapse },
@@ -65,7 +65,7 @@ export const PAINKILLER: CaseTemplate = {
           ev('med_count', '薬の数', '鎮痛剤（オピオイド系）が10錠足りない。飲みすぎると呼吸が弱くなる種類だ。', { room: 'medbay', skill: 'med', minSkill: 1, work: 3, fact: 'F_opioid', key: true, where: '医務室（医療技能が必要）' }),
           ev('fiber', '取っ手の繊維', '薬品庫の取っ手に、厚手の作業用手袋の繊維が付いている。', { room: 'medbay', source: 'trace', skill: 'inv', minSkill: 1, work: 3, fact: 'F_fiber', key: true, where: '医務室の薬品庫' }),
           ev('m_alibi', '当直の引き継ぎ記録', `${T(T0 - 5 * 60)}〜${T(T0 + 15 * 60)} ${M.name}は司令室で当直の引き継ぎ中。`, { room: 'bridge', source: 'record', skill: 'inv', minSkill: 1, work: 3, fact: 'F_m_alibi', key: true, where: '司令室のログイン記録' }),
-          ev('work_log', '荷役の作業記録', `3日前：${P.name}が重い箱を落として作業を中断。負傷の申告はない。`, { room: 'cargo', source: 'record', skill: 'inv', minSkill: 1, work: 4, fact: 'F_injury', key: true, where: `${g.rn('cargo')}の作業記録` }),
+          ev('work_log', '荷役の作業記録', line(P, 'painkiller.worklog', `3日前：${P.name}が重い箱を落として作業を中断。負傷の申告はない。`), { room: 'cargo', source: 'record', skill: 'inv', minSkill: 1, work: 4, fact: 'F_injury', key: true, where: `${g.rn('cargo')}の作業記録` }),
           ev('bunk', '寝台のまわり', `${P.name}の寝台の下に、湿布の空き袋が山になっている。`, { room: 'quarters', source: 'trace', skill: 'inv', minSkill: 1, work: 3, fact: 'F_bunk', where: `${g.rn('quarters')}` }),
           ev('p_found', '倒れていた乗員', `${P.name}が水再生室の床に倒れている。呼吸が浅く、瞳孔が針の先のように小さい。`, { room: null, source: 'report', fact: 'F_found', where: '水再生室へ行く' }),
           said('e_saw', E.name, `${T(enter)}ごろ、${P.name}が水再生室へ入っていくのを見ました。具合が悪そうでした`, 'F_e_saw', `${E.name}から話を聞く（下層の通信が戻ってから）`),
@@ -103,6 +103,12 @@ export const PAINKILLER: CaseTemplate = {
         { id: 'fall', label: '乗員が下層で足を滑らせて頭を打った', category: 'accident' },
         { id: 'gas', label: '下層に漂う未知のガスで乗員が倒れた', category: 'phenomenon' },
       ],
+      unlock: {
+        'cause:overdose_theft': ['med_count', 'work_log', 'bunk', 'p_found'], 'cause:resale': ['med_count', 'z_claim'], 'cause:medic_error': ['locker_log'],
+        'cause:fall': ['p_found'], 'cause:gas': ['p_found'],
+        'order:o_injury': ['work_log', 'q_claim', 'bunk'], 'order:o_theft': ['locker_log'], 'order:o_enter': ['e_saw', 'p_found'], 'order:o_collapse': ['p_found'],
+        'plan:naloxone': ['med_count'], 'plan:searchLower': ['stock_alarm'], 'plan:lockMed': ['locker_log'],
+      },
       respond: { label: '薬品庫を調べる', desc: '医務室で薬品庫と在庫を確認する', room: 'medbay', waitLabel: '医務室で待機' },
       fieldActions: [],
       plans: [
@@ -142,6 +148,11 @@ export const PAINKILLER: CaseTemplate = {
             a.learn(finder, 'F_found');
             a.report(finder, `［倒れていた乗員］${a.evText('p_found')}`, { evidence: ['p_found'], kind: 'danger', reason: '一刻を争う容体なので最優先で伝える' });
           }
+        }
+        // 下層の通信が戻れば、生体モニタで倒れていることが分かる
+        if (!v.found && p.alive && !a.w.commDown.includes('lower')) {
+          v.found = 1;
+          a.log(`生体モニタ：${P.name}の呼吸と脈が弱い。水再生室で動いていない。`, 'danger', `${P.name}の容体`, ['p_found']);
         }
         if (a.now() >= maintEnd && a.once('maint_end')) { v.relay_lower = 1; a.log(`下層の中継器の定期整備が終わり、通信が戻った。`); }
         a.setComm('lower', !v.relay_lower);

@@ -7,7 +7,7 @@
     "build": "tsc --noEmit && vite build && node scripts/gen-sw.mjs",
     "preview": "vite preview --port 4173",
     "test": "vitest run",
-    "e2e": "node e2e/play.mjs",
+    "e2e": "node e2e/play.mjs && node e2e/voyage.mjs",
     "icons": "node scripts/make-icons.mjs"
   },
   "license": "ISC",

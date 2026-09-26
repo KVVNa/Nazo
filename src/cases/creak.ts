@@ -11,11 +11,12 @@ export const CREAK: CaseTemplate = {
   needLower: [],
   build(g) {
     const E = g.byRole('engineer')!;
-    const N = find(g, (c) => c.roleId === 'navigator' || c.roleId === 'comms', [E]);
+    const N = find(g, (c) => c.roleId === 'navigator' || c.roleId === 'comms', [E], g.cast);
     const W = find(g, () => true, [E, N]);
     const T = g.clock;
-    const sun = g.rooms.find((r) => r.group === 'port' && r.rect[1] === 4)!.id;
-    const sun2 = g.rooms.find((r) => r.group === 'port' && r.rect[1] === 7)!.id;
+    const portRooms = g.rooms.filter((r) => r.group === 'port').sort((a, b) => a.rect[1] - b.rect[1]).map((r) => r.id);
+    const sun = portRooms[0];
+    const sun2 = portRooms[1];
     const memo = g.hm(9, 0) - 5 * 86400;
     const R = g.hm(g.int(22, 23), g.int(0, 55));
     const T0 = R + g.int(80, 100) * 60;
@@ -97,6 +98,12 @@ export const CREAK: CaseTemplate = {
         { id: 'loose_cargo', label: '固定の外れた積荷が動いてぶつかっている', category: 'accident' },
         { id: 'resonance', label: 'ポンプの振動が船体と共振している', category: 'accident' },
       ],
+      unlock: {
+        'cause:thermal_roll': ['hull_temp', 'joint_marks', 'roll_log'], 'cause:stowaway': ['w_claim', 'bang_alarm'], 'cause:debris': ['bang_alarm'],
+        'cause:loose_cargo': ['bang_alarm'], 'cause:resonance': ['bang_period'],
+        'order:o_memo': ['fuel_memo'], 'order:o_stop': ['roll_log'], 'order:o_bang': ['bang_alarm'], 'order:o_relay': ['bang_alarm'],
+        'plan:resumeRoll': ['roll_log', 'e_claim'], 'plan:coolant': ['hull_temp'], 'plan:closeSun': ['hull_temp'], 'plan:search': ['w_claim', 'bang_alarm'],
+      },
       respond: { label: '異音の出どころを調べる', desc: `左舷の${g.rn(sun)}で音の元を探す`, room: sun, waitLabel: `${g.rn(sun)}で音を聞いている` },
       fieldActions: [
         { id: 'cool', room: sun, needs: 'F_hot', label: '冷却材を左舷に回す', ask: '左舷の外壁が上限近くまで熱くなっています。冷却材を左舷に回してよいですか', why: '上限を超える前に少しでも熱を逃がすべきだと判断', skill: 'mech', minSkill: 1, action: 'coolant' },

@@ -5,8 +5,13 @@ import { generateCase } from '../gen/generate';
 import { TEMPLATES } from '../gen/registry';
 import { applyAction, step, type StepResult } from '../sim/sim';
 import { buildView, type ViewModel } from '../view/view';
-import { clearSnapshot, loadSnapshot, saveSnapshot, saveVoyageCase, loadSettings, saveSettings, type Settings } from '../save/save';
+import { clearSnapshot, loadSnapshot, saveSnapshot, saveVoyageCase, loadSettings, saveSettings, type Settings, saveCampaign, loadCampaign, clearCampaign } from '../save/save';
 import { evaluateCase } from '../judge/judge';
+import {
+  newVoyage, prepareCase, applyCaseResult, answerDinner, talk as vTalk, treat as vTreat, setConfined, leaveInterlude,
+  finishReport, finishAbort, mustAbort, migrateVoyage, repair as vRepair, rest as vRest, type VoyageState,
+} from '../voyage/voyage';
+import type { ReportChoice } from '../voyage/ending';
 
 type Listener = (v: ViewModel, ev: { pause: string | null; sfx: string[]; ticked: boolean }) => void;
 
@@ -22,8 +27,11 @@ class Game {
   canRun = true; // 地図を見ているときだけ true（ボードやメニューでは止まる）
   settings: Settings = loadSettings();
   voyageSaved = false;
+  campaign: VoyageState | null = (() => { const c = loadCampaign<VoyageState>(); return c ? migrateVoyage(c) : null; })();
+  caseNote: string | null = null; // 航海モード：会話で防いだ事件などの一言
 
   hasSnapshot(): boolean { return !!loadSnapshot(); }
+  get inVoyage() { return !!this.s?.fixed; }
 
   // 事件一覧（題名だけ。原因の種類は見せない）
   cases(): { id: string; title: string }[] { return TEMPLATES.map((t) => ({ id: t.id, title: t.title })); }
@@ -46,6 +54,68 @@ class Game {
     this.voyageSaved = false;
     this.running = false;
     this.emit(null, []);
+  }
+
+  // ---------------- 航海モード ----------------
+  hasCampaign(): boolean { return !!this.campaign && this.campaign.phase !== 'done'; }
+  newCampaign(seed?: number) {
+    clearCampaign();
+    this.campaign = newVoyage(seed);
+    this.saveCamp();
+  }
+  saveCamp() { if (this.campaign) saveCampaign(this.campaign); }
+  dropCampaign() { clearCampaign(); this.campaign = null; }
+  vSetPhase(p: VoyageState['phase']) { if (!this.campaign) return; this.campaign.phase = p; this.saveCamp(); }
+  vAnswerDinner(id: string, i: number) { if (!this.campaign) return; answerDinner(this.campaign, id, i); this.saveCamp(); }
+  // 次の事件を組み立てて始める（検証つき）
+  vStartCase() {
+    const v = this.campaign;
+    if (!v) return;
+    const r = prepareCase(v);
+    v.phase = 'case';
+    this.saveCamp();
+    this.s = r.state;
+    this.caseNote = r.note ?? null;
+    this.voyageSaved = false;
+    this.running = false;
+    this.persist();
+    this.emit(null, []);
+  }
+  // 事件中の続き。自動保存がなければ、同じ事件を最初から作り直す
+  vResumeCase(): boolean {
+    const v = this.campaign;
+    if (!v || v.phase !== 'case') return false;
+    const st = loadSnapshot(true);
+    if (st && st.fixed) {
+      this.s = st;
+    } else if (v.pendingCase) {
+      this.s = generateCase(v.pendingCase.seed, v.pendingCase.templateId, v.pendingCase.fixed);
+    } else return false;
+    this.caseNote = v.pendingCase?.note ?? null;
+    this.running = false;
+    this.emit(null, []);
+    return true;
+  }
+  vCaseLabel(): string {
+    const v = this.campaign;
+    return v ? `航海番号 ${v.seed}　第${v.results.length + (v.phase === 'case' ? 1 : 0)}話` : '';
+  }
+  vTalk(id: string, choice: number | null) { if (this.campaign) { vTalk(this.campaign, id, choice); this.saveCamp(); } }
+  vTreat(): string[] { if (!this.campaign) return []; const r = vTreat(this.campaign); this.saveCamp(); return r; }
+  vRepair(): number { if (!this.campaign) return 0; const r = vRepair(this.campaign); this.saveCamp(); return r; }
+  vRest(): boolean { if (!this.campaign) return false; const r = vRest(this.campaign); this.saveCamp(); return r; }
+  vConfine(id: string, on: boolean): boolean { if (!this.campaign) return false; const r = setConfined(this.campaign, id, on); this.saveCamp(); return r; }
+  vLeave() { if (this.campaign) { leaveInterlude(this.campaign); this.saveCamp(); } }
+  vMustAbort(): boolean { return !!this.campaign && mustAbort(this.campaign); }
+  vFinish(choice: ReportChoice, attach: string[], blocked: boolean) { if (this.campaign) { finishReport(this.campaign, choice, attach, blocked); this.saveCamp(); } }
+  vAbort() { if (this.campaign) { finishAbort(this.campaign); this.saveCamp(); } }
+  // 事件が終わった時点で航海に結果を書き込む（再読み込みでやり直せないように）
+  private settleVoyageCase() {
+    const v = this.campaign;
+    if (!this.s?.fixed || !v || v.phase !== 'case' || this.s.phase !== 'ended') return;
+    applyCaseResult(v, this.s, this.vCaseLabel());
+    this.saveCamp();
+    clearSnapshot(true);
   }
 
   resume(): boolean {
@@ -162,7 +232,7 @@ class Game {
       }
       if (pause || this.s.phase !== 'play') { this.running = false; this.acc = 0; }
       if (n) {
-        if (this.s.world.tick % 30 === 0 || pause) this.persist();
+        if (this.s.world.tick % 30 === 0 || pause || this.s.phase !== 'play') this.persist();
         this.emit(pause, sfx, true);
       }
       if (this.running) this.raf = requestAnimationFrame(frame);
@@ -174,7 +244,11 @@ class Game {
 
   persist() {
     if (!this.s) return;
-    if (this.s.phase === 'ended') { clearSnapshot(); return; }
+    if (this.s.phase === 'ended') {
+      if (this.s.fixed) this.settleVoyageCase();
+      else clearSnapshot();
+      return;
+    }
     saveSnapshot(this.s);
   }
 

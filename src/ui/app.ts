@@ -8,6 +8,8 @@ import { renderBoard } from './board';
 import { renderHypothesis, resetDraft } from './hypo';
 import { renderResult } from './result';
 import { exportVoyage, importVoyage, loadVoyage } from '../save/save';
+import { openVoyage, rosterSheet } from './voyage_ui';
+import { STAGES } from '../voyage/story';
 import type { CrewId, Policy, RoomId } from '../core/types';
 
 type Tab = 'ship' | 'crew' | 'log' | 'board' | 'hypo';
@@ -57,14 +59,43 @@ function showTitle() {
   r.appendChild(h('div', { class: 'screen title-screen' },
     h('h1', { class: 'logo' }, '宇宙船ミステリー', h('small', {}, `仮題 ／ 試作版（事件 ${game.cases().length} 種）`)),
     h('div', { style: { display: 'flex', gap: '8px' } }, faces.map((f) => h('img', { class: 'portrait', src: portraitURL(f, 4), width: 72, height: 72, alt: '' }))),
-    h('p', { class: 'muted' }, 'あなたは船長。司令室から乗員に方針を与え、届いた報告と証拠から原因を突き止める。'),
-    game.hasSnapshot() ? h('button', { class: 'btn primary', onclick: () => { if (game.resume()) enterPlay(); } }, '続きから') : null,
-    h('button', { class: 'btn' + (game.hasSnapshot() ? '' : ' primary'), onclick: () => startNew() }, '新しい事件（ランダム）'),
+    h('p', { class: 'muted' }, 'あなたは調査船の船長。司令室から乗員に方針を与え、届いた報告と証拠から原因を突き止める。'),
+    game.hasCampaign() ? h('button', { class: 'btn primary', onclick: () => goVoyage() }, `航海を続ける（${voyageWhere()}）`) : null,
+    h('button', { class: 'btn' + (game.hasCampaign() ? '' : ' primary'), onclick: () => newVoyageSheet() }, '新しい航海を始める'),
+    h('h3', { class: 'small muted', style: { margin: '10px 0 0' } }, '単発の事件（乗員は毎回変わる）'),
+    game.hasSnapshot() ? h('button', { class: 'btn', onclick: () => { if (game.resume()) enterPlay(); } }, '単発の事件の続きから') : null,
+    h('button', { class: 'btn', onclick: () => startNew() }, '新しい事件（ランダム）'),
     h('button', { class: 'btn', onclick: () => chooseSheet() }, '事件を選ぶ／事件番号で始める'),
-    h('button', { class: 'btn', onclick: () => settingsSheet() }, '設定・航海記録'),
+    h('button', { class: 'btn', onclick: () => settingsSheet() }, '設定・事件記録'),
     !standalone && isIOS ? h('div', { class: 'hint' }, 'iPhoneでは、共有ボタンから「ホーム画面に追加」してから遊ぶと、オフラインでも起動でき、保存データも消えにくくなります。') : null,
     !standalone && !isIOS ? h('div', { class: 'hint' }, '一度読み込めばオフラインでも遊べます。保存はこの端末のこのブラウザ内だけです。') : null,
   ));
+}
+
+// ---------------- 航海モード ----------------
+const voyageNav = { title: () => { game.quit(); showTitle(); }, briefing: () => { resetDraft(); enterPlay(); } };
+function goVoyage() { ui.screen = 'title'; cancelAnimationFrame(ui.anim); openVoyage(voyageNav); }
+function voyageWhere(): string {
+  const v = game.campaign!;
+  if (v.phase === 'prologue' || v.phase === 'dinner') return 'プロローグ';
+  if (v.phase === 'ending') return '到着';
+  return v.phase === 'case' ? `第${v.stage + 1}話の途中` : `第${v.stage + 1}話の前`;
+}
+function newVoyageSheet() {
+  const inp = h('input', { type: 'text', inputmode: 'numeric', placeholder: '空欄ならランダム' }) as HTMLInputElement;
+  const go = () => {
+    const n = inp.value.trim() ? Number(inp.value.replace(/[^0-9]/g, '')) >>> 0 : undefined;
+    closeSheet();
+    game.newCampaign(n);
+    goVoyage();
+  };
+  sheet(h('div', {},
+    h('h2', {}, '新しい航海'),
+    h('p', { class: 'small' }, '調査船〈ケストレル〉で、建設中の入植地がある惑星〈ハース〉へ向かう、62日の航海。途中で5つの事件が起きる。乗員8人は航海を通して同じ顔ぶれで、死んだ乗員は戻らない。'),
+    h('p', { class: 'small muted' }, '航海番号を入れると、同じ事件の並びで遊べる（事件の中身は選択によって変わる）。'),
+    inp,
+    game.hasCampaign() ? h('p', { class: 'small', style: { color: 'var(--warn)' } }, '進行中の航海は消えます。') : null,
+    h('button', { class: 'btn primary', style: { marginTop: '8px' }, onclick: go }, '出港の準備をする')));
 }
 
 // 事件の生成は検証つきで少し時間がかかるので、表示を出してから行う
@@ -87,7 +118,7 @@ function chooseSheet() {
   const msg = h('p', { class: 'small muted' });
   sheet(h('div', {},
     h('h2', {}, '事件を選ぶ'),
-    h('p', { class: 'small muted' }, '題名だけを見て選べます。登場人物や部屋割り、細部は毎回変わります。'),
+    h('p', { class: 'small muted' }, '題名だけを見て選べます。登場人物や関係者、時刻などの細部は毎回変わります。'),
     h('div', { style: { display: 'grid', gap: '6px' } }, game.cases().map((c, i) => h('button', { class: 'opt', onclick: () => { closeSheet(); startNew(c.id); } }, `${String(i + 1).padStart(2, '0')}　${c.title}`))),
     h('h2', { style: { marginTop: '16px' } }, '事件番号で始める'),
     h('p', { class: 'small muted' }, '友人と同じ事件を遊ぶときは、ブリーフィングに出る事件番号を伝えてください。'),
@@ -104,13 +135,13 @@ function chooseSheet() {
 function settingsSheet() {
   const s = game.settings;
   const voyage = loadVoyage();
-  const ta = h('textarea', { placeholder: '書き出した航海記録をここに貼り付けて読み込む' }) as HTMLTextAreaElement;
+  const ta = h('textarea', { placeholder: '書き出した事件記録をここに貼り付けて読み込む' }) as HTMLTextAreaElement;
   const msg = h('p', { class: 'small muted' });
   sheet(h('div', {},
     h('h2', {}, '設定'),
     h('label', { class: 'toggle' }, '効果音', h('input', { type: 'checkbox', checked: s.sound, onchange: (e: any) => { s.sound = e.target.checked; game.saveSettings(); } })),
     h('label', { class: 'toggle' }, '演出を控えめにする（振動・点滅なし）', h('input', { type: 'checkbox', checked: s.reduceEffects, onchange: (e: any) => { s.reduceEffects = e.target.checked; game.saveSettings(); } })),
-    h('h2', { style: { marginTop: '16px' } }, '航海記録'),
+    h('h2', { style: { marginTop: '16px' } }, '事件記録'),
     h('p', { class: 'small muted' }, '事件を終えたときに保存した記録です。保存先はこの端末のこのブラウザだけなので、端末やブラウザを変えると引き継がれません。移すときは書き出して、移行先で読み込んでください。'),
     voyage ? h('div', { class: 'card small' }, voyage.cases.map((c) => h('div', {}, `${c.title}：${c.grade}（生存 ${c.crew.filter((x) => x.alive).length}/${c.crew.length}、船体 ${c.hull}）`))) : h('p', { class: 'small' }, 'まだ記録はありません。'),
     h('div', { class: 'btn-row' },
@@ -134,16 +165,19 @@ function showBriefing() {
   const v = game.view()!;
   const r = root();
   clear(r);
+  const voy = game.inVoyage ? game.campaign : null;
   r.appendChild(h('div', { class: 'screen' },
-    h('p', { class: 'muted small' }, 'ブリーフィング'),
+    h('p', { class: 'muted small' }, voy ? `第${voy.stage + 1}話　出港${STAGES[voy.stage].day}日目` : 'ブリーフィング'),
     h('h1', { style: { margin: '0 0 4px', fontSize: '24px' } }, `事件：${v.title}`),
-    h('p', { class: 'small muted', style: { margin: '0 0 8px' } }, `事件番号 ${game.caseCode()}（友人に伝えると同じ事件を遊べる）`),
+    voy ? h('p', { class: 'small muted', style: { margin: '0 0 8px' } }, game.vCaseLabel())
+      : h('p', { class: 'small muted', style: { margin: '0 0 8px' } }, `事件番号 ${game.caseCode()}（友人に伝えると同じ事件を遊べる）`),
+    voy && game.caseNote ? h('div', { class: 'hint' }, game.caseNote) : null,
     h('div', { class: 'card' }, v.briefing.map((b) => h('p', { style: { margin: '4px 0' } }, b))),
     h('h3', {}, '乗員'),
-    h('p', { class: 'small muted' }, '技能や性格は最初は分からない。仕事ぶりや会話から見えてくる。'),
+    h('p', { class: 'small muted' }, voy ? '死亡・拘束中の乗員は、この事件には出てこない。' : '技能や性格は最初は分からない。仕事ぶりや会話から見えてくる。'),
     v.crew.map((c) => h('div', { class: 'crew-row' },
       h('img', { src: portraitURL(c.look), alt: '' }),
-      h('div', { class: 'body' }, h('div', { class: 'name' }, `${c.name}　${c.role}`), h('div', { class: 'small muted' }, `経歴：${c.history}`), h('div', { class: 'small' }, `現在地：${c.roomName ?? '通信断で不明'}`)))),
+      h('div', { class: 'body' }, h('div', { class: 'name' }, `${c.name}　${c.role}`), h('div', { class: 'small muted' }, `経歴：${c.history}`), h('div', { class: 'small' }, `作業着：${SUIT_WORD[c.look.suit]}　現在地：${c.roomName ?? '通信断で不明'}`)))),
     h('div', { class: 'card small' },
       h('b', {}, '操作のしかた'),
       h('p', { style: { margin: '4px 0' } }, '・乗員をタップして方針を与える。方針は変えるまで続く。'),
@@ -194,7 +228,8 @@ function menuSheet() {
       h('div', {}, `医療品 ${st.medkits}　予備部品 ${st.spareParts}　消火器 ${st.extinguishers}`),
       h('div', { class: 'muted' }, '試作版では事件中に増減しない。事件の合間の配分で使う予定。')),
     h('div', { style: { display: 'grid', gap: '8px' } },
-      h('button', { class: 'btn', onclick: () => { closeSheet(); settingsSheet(); } }, '設定・航海記録'),
+      game.inVoyage ? h('button', { class: 'btn', onclick: () => { closeSheet(); rosterSheet(); } }, '乗員名簿と分かったこと') : null,
+      h('button', { class: 'btn', onclick: () => { closeSheet(); settingsSheet(); } }, '設定・事件記録'),
       h('button', { class: 'btn', onclick: () => { closeSheet(); game.quit(); showTitle(); } }, 'タイトルへ（続きは保存されます）'))));
 }
 
@@ -399,6 +434,7 @@ function crewSheet(id: CrewId) {
     h('dl', { class: 'kv', style: { marginTop: '10px' } },
       h('dt', {}, '状況'), h('dd', {}, statusLine(c)),
       h('dt', {}, '健康'), h('dd', {}, c.dead ? '—' : `${c.health}%${c.healthLive ? '' : '（最後の確認時）'}`),
+      h('dt', {}, '作業着'), h('dd', {}, SUIT_WORD[c.look.suit] ?? '—'),
       h('dt', {}, '信頼'), h('dd', {}, trustWord(c.trust)),
       h('dt', {}, '技能'), h('dd', {}, skills),
       h('dt', {}, '方針'), h('dd', {}, c.policy + (c.pending ? `（保留中：${c.pending}）` : ''))),
@@ -415,6 +451,8 @@ function crewSheet(id: CrewId) {
   ));
   sheet(body);
 }
+
+const SUIT_WORD = ['橙色', '青', '白', '緑'];
 
 function trustWord(t: number) {
   return t >= 75 ? '厚い' : t >= 55 ? 'ふつう' : t >= 35 ? '揺らいでいる' : '低い';
@@ -485,5 +523,6 @@ function showResult() {
     save: () => game.saveVoyage(),
     saved: () => game.voyageSaved,
     title: () => { game.quit(); showTitle(); },
+    voyage: game.inVoyage ? () => { game.quit(); goVoyage(); } : undefined,
   }));
 }

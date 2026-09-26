@@ -1,7 +1,7 @@
 // 工作：はんだごてで煙感知器をあぶって火災警報を偽装し、騒ぎの隙に積荷の試料を盗んだ。
 import type { CaseTemplate } from '../gen/case_api';
 import { ev, said } from '../gen/case_api';
-import { bestLive, find, genericEpilogue, hullMeter, inComm, pct, placeRest } from './common';
+import { bestLive, find, genericEpilogue, hullMeter, inComm, pct, placeRest, line } from './common';
 import { GROUP_NAME } from '../sim/ship';
 
 export const FALSEFIRE: CaseTemplate = {
@@ -12,7 +12,7 @@ export const FALSEFIRE: CaseTemplate = {
   needLower: [],
   build(g) {
     const E = g.byRole('engineer')!;
-    const S = find(g, (c) => ['comms', 'cargo', 'security', 'navigator', 'cook'].includes(c.roleId), [E, g.byRole('medic')]);
+    const S = find(g, (c) => ['comms', 'cargo', 'security', 'navigator', 'cook'].includes(c.roleId), [E, g.byRole('medic')], g.cast);
     const SC = find(g, (c) => c.roleId === 'scientist', [S]);
     const W = find(g, () => true, [S, SC]);
     const T = g.clock;
@@ -20,7 +20,7 @@ export const FALSEFIRE: CaseTemplate = {
     const take = T0 - g.int(18, 25) * 60;
     const steal = T0 + 3 * 60;
     const grp = g.groupOf('cargo');
-    const relayRoom = g.rooms.find((r) => r.group === grp && r.rect[1] === 4)!.id;
+    const relayRoom = g.relayOf(grp);
     const pull = T0 + 8 * 60;
     const start = T0 + g.int(22, 30) * 60;
     const heaterOff = T0 - g.int(55, 70) * 60;
@@ -50,7 +50,7 @@ export const FALSEFIRE: CaseTemplate = {
       truth: {
         cause: 'diversion_theft',
         events: [
-          { id: 'ev_motive', sec: T0 - 30 * 86400, room: 'cargo', actor: null, text: `${S.name}は前の船で給料を踏み倒され、金に困っていた。この船の積荷には高価な鉱物試料があった。`, causes: ['ev_take'] },
+          { id: 'ev_motive', sec: T0 - 30 * 86400, room: 'cargo', actor: null, text: line(S, 'falsefire.motive', `${S.name}は前の船で給料を踏み倒され、金に困っていた。この船の積荷には高価な鉱物試料があった。`), causes: ['ev_take'] },
           { id: 'ev_take', sec: take, room: 'engineering', actor: S.id, text: `${T(take)}、${S.name}は機関区の工具棚からはんだごてを持ち出した。`, causes: ['ev_heat'] },
           { id: 'ev_heat', sec: T0 - 60, room: 'lab', actor: S.id, text: `${T(T0 - 60)}、${S.name}ははんだごてで${labName}の煙感知器をあぶった。`, causes: ['ev_alarm'] },
           { id: 'ev_alarm', sec: T0, room: 'lab', actor: null, text: `${T(T0)}、火災警報が鳴り、消火系統が作動した。排気弁が開いたまま固着した。`, causes: ['ev_valve'] },
@@ -74,12 +74,12 @@ export const FALSEFIRE: CaseTemplate = {
           ev('heater_log', '加熱装置の記録', `${T(heaterOff)} 加熱装置は正常に停止。以後は通電していない。`, { room: 'lab', work: 2, fact: 'F_heater_off', where: `${labName}の加熱装置` }),
           ev('tool_log', '工具の持ち出し記録', `${T(take)} はんだごてを持ち出し（${S.name}）。返却の記録はない。`, { room: 'engineering', source: 'record', skill: 'inv', minSkill: 1, work: 3, fact: 'F_tool', key: true, where: '下層機関区の工具棚' }),
           ev('seal_broken', 'コンテナの封印', 'コンテナ7番の封印が切られ、中の試料ケースが空になっている。', { room: 'cargo', source: 'trace', skill: 'inv', minSkill: 1, work: 3, fact: 'F_seal', key: true, where: `${g.rn('cargo')}のコンテナ` }),
-          ev('manifest', '積荷目録', 'コンテナ7番：希少鉱物の試料1点（高価・保険付き）。', { room: 'cargo', source: 'record', work: 2, fact: 'F_manifest', where: `${g.rn('cargo')}の目録` }),
+          ev('manifest', '積荷目録', line(S, 'falsefire.manifest', 'コンテナ7番：希少鉱物の試料1点（高価・保険付き）。'), { room: 'cargo', source: 'record', work: 2, fact: 'F_manifest', where: `${g.rn('cargo')}の目録` }),
           ev('door_cargo', '貨物室のドア記録', `${T(steal)} 貨物室ドア開閉（認証：${S.name}）。`, { room: 'bridge', skill: 'inv', minSkill: 1, work: 3, fact: 'F_door', key: true, where: '司令室の船内ドア記録' }),
-          ev('relay_pulled', '中継器のプラグ', '中継器の電源プラグが抜かれていた。偶然抜けることはない。', { room: relayRoom, source: 'trace', work: 3, fact: 'F_pulled', where: `${g.rn(relayRoom)}の中継器` }),
+          ev('relay_pulled', '中継器のプラグ', '中継器の電源プラグが抜かれていた。偶然抜けることはない。', { relay: true, room: relayRoom, source: 'trace', work: 3, fact: 'F_pulled', where: `${g.rn(relayRoom)}の中継器` }),
           ev('bag', '私物の袋', `${S.name}の私物袋から、コンテナ7番の試料ケースの中身が見つかった。`, { room: null, source: 'report', fact: 'F_bag', where: '持ち物検査' }),
           said('s_claim', S.name, `警報のときは${g.rn(sRoom)}にいました。そのあとはみんなと一緒に研究室の前です`, 'F_s_lie', `${S.name}から話を聞く`),
-          { ...said('s_confess', S.name, '……前の船で給料を踏み倒されて。この試料一つで取り返せると思ったんです', 'F_s_did', `${S.name}に工具の記録かドア記録を突きつける`), title: `${S.name}の告白` },
+          { ...said('s_confess', S.name, line(S, 'falsefire.confess', '……前の船で給料を踏み倒されて。この試料一つで取り返せると思ったんです'), 'F_s_did', `${S.name}に工具の記録かドア記録を突きつける`), title: `${S.name}の告白` },
           said('sc_claim', SC.name, '研究室の加熱装置、止め忘れたかもしれません……私のせいかも', 'F_sc_belief', `${SC.name}から話を聞く`),
           said('w_claim', W.name, '警報のあと研究室の前まで行きましたが、煙は見えませんでした。焦げ臭くもなかった', 'F_w_nosmoke', `${W.name}から話を聞く`),
         ],
@@ -111,6 +111,12 @@ export const FALSEFIRE: CaseTemplate = {
         { id: 'sensor_fault', label: '煙感知器の故障で警報が鳴った', category: 'accident' },
         { id: 'static', label: '静電気の放電で感知器が誤作動した', category: 'phenomenon' },
       ],
+      unlock: {
+        'cause:diversion_theft': ['seal_broken', 'heat_mark', 'tool_log'], 'cause:real_fire': ['fire_alarm'], 'cause:heater': ['sc_claim', 'heater_log'],
+        'cause:sensor_fault': ['smoke_log'], 'cause:static': ['fire_alarm'],
+        'order:o_take': ['tool_log'], 'order:o_alarm': ['fire_alarm'], 'order:o_steal': ['door_cargo', 'seal_broken'], 'order:o_pull': ['relay_pulled'],
+        'plan:closeValve': ['smoke_log', 'w_claim'], 'plan:isolateLab': ['fire_alarm'], 'plan:searchBags': ['seal_broken', 'manifest'],
+      },
       respond: { label: '火災に対応', desc: `${labName}へ向かい、火元と消火系統を確かめる`, room: 'lab', waitLabel: `${labName}の前で待機` },
       fieldActions: [
         { id: 'closeValve', room: 'lab', needs: 'F_heat_only', label: '消火系統を止めて排気弁を閉じる', ask: '煙は出ていません。熱だけです。消火系統を止めて排気弁を手で閉じてよいですか', why: '火は出ておらず、空気を逃がし続けるほうが危ないと判断', skill: 'mech', minSkill: 1, action: 'closeValve' },
@@ -157,11 +163,11 @@ export const FALSEFIRE: CaseTemplate = {
       resolved: (a) => !a.v.valve,
       resolvedText: '排気弁が閉じ、空気の流出が止まった。',
       epilogue: (e) => genericEpilogue(e, {
-        [S.id]: e.crew.find((c) => c.id === S.id)!.confessed ? `${S.name}は試料を返し、寄港後に自分から保安当局へ出向くと言った。` : e.has('bag') ? `試料は${S.name}の袋から見つかった。${S.name}は最後まで理由を語らなかった。` : `コンテナ7番の試料は見つからないまま、寄港の日を迎えた。`,
+        [S.id]: e.crew.find((c) => c.id === S.id)!.confessed ? line(S, 'falsefire.epi', `${S.name}は試料を返し、寄港後に自分から保安当局へ出向くと言った。`) : e.has('bag') ? `試料は${S.name}の袋から見つかった。${S.name}は最後まで理由を語らなかった。` : `コンテナ7番の試料は見つからないまま、寄港の日を迎えた。`,
         [SC.id]: e.has('heater_log') ? `${SC.name}は自分のせいではなかったと知り、長い息をついた。` : `${SC.name}は今も、加熱装置を止め忘れたのではと自分を責めている。`,
       }),
       solve: {
-        policies: { [fixer.id]: [{ kind: 'respond' }], [inv.id]: [{ kind: 'investigate', room: 'bridge' }, { kind: 'investigate', room: 'engineering' }, { kind: 'investigate', room: 'cargo' }] },
+        policies: { [fixer.id]: [{ kind: 'respond' }], [inv.id]: [{ kind: 'investigate', room: 'bridge' }, { kind: 'investigate', room: 'engineering' }, { kind: 'investigate', room: 'cargo' }, ...(['bridge', 'engineering', 'cargo', 'lab'].includes(relayRoom) ? [] : [{ kind: 'investigate' as const, room: relayRoom }])] },
         hyp: { category: 'sabotage', cause: 'diversion_theft', order: ['o_take', 'o_alarm', 'o_steal', 'o_pull'], person: { crew: S.id, role: 'sabotage' }, evidence: ['smoke_log', 'heat_mark', 'tool_log', 'door_cargo'], plan: 'closeValve' },
       },
     };

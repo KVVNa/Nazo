@@ -12,7 +12,7 @@ export const NAVTAMPER: CaseTemplate = {
   needLower: [],
   build(g) {
     const M = g.byRole('medic')!;
-    const S = find(g, (c) => ['comms', 'cargo', 'security', 'navigator', 'cook'].includes(c.roleId), [M, g.byRole('engineer')]);
+    const S = find(g, (c) => ['comms', 'cargo', 'security', 'navigator', 'cook'].includes(c.roleId), [M, g.byRole('engineer')], g.cast);
     const B = find(g, (c) => c.roleId === 'navigator' || c.roleId === 'scientist', [M, S]);
     const N = find(g, () => true, [M, S, B]);
     const T = g.clock;
@@ -22,7 +22,7 @@ export const NAVTAMPER: CaseTemplate = {
     const start = T0 + g.int(55, 75) * 60;
     const eta = g.int(140, 160);
     const grp = g.groupOf('comms');
-    const relayRoom = g.rooms.find((r) => r.group === grp && r.rect[1] === 4)!.id;
+    const relayRoom = g.relayOf(grp);
     const crewInit: Record<string, { room: string; known?: string[]; hides?: string[]; label?: string }> = {
       [S.id]: { room: 'corridor', known: ['F_s_did'], hides: ['F_s_did'] },
       [B.id]: { room: 'medbay', known: ['F_b_alibi'] },
@@ -73,7 +73,7 @@ export const NAVTAMPER: CaseTemplate = {
           ev('beacon', 'ビーコンの受信記録', '経由点の近くから、登録のない貨物ポッドの弱いビーコン。', { room: 'comms', skill: 'mech', minSkill: 1, work: 3, fact: 'F_beacon', where: '通信室の受信機' }),
           ev('manifest', '貨物室の積付表', '空きコンテナ1個が「受け入れ準備済み」になっている。積む予定の申告はない。', { room: 'cargo', source: 'record', skill: 'inv', minSkill: 1, work: 4, fact: 'F_container', key: true, where: '貨物室の積付表' }),
           ev('med_record', '健康診断の記録', `${T(T0 - 10 * 60)}〜${T(T0 + 15 * 60)} ${B.name}：定期健康診断（担当：${M.name}）。`, { room: 'medbay', source: 'record', work: 2, fact: 'F_b_alibi', where: '医務室の記録' }),
-          ev('relay_pulled', '中継器のプラグ', '中継器の電源プラグが抜かれていた。差し込みは固く、偶然抜けることはない。', { room: relayRoom, source: 'trace', work: 3, fact: 'F_pulled', where: `${g.rn(relayRoom)}の中継器` }),
+          ev('relay_pulled', '中継器のプラグ', '中継器の電源プラグが抜かれていた。差し込みは固く、偶然抜けることはない。', { relay: true, room: relayRoom, source: 'trace', work: 3, fact: 'F_pulled', where: `${g.rn(relayRoom)}の中継器` }),
           said('s_claim', S.name, `その時間は${g.has('quarters') ? g.rn('quarters') : '自分の寝台'}で寝ていました。何も知りません`, 'F_s_lie', `${S.name}から話を聞く`),
           { ...said('s_confess', S.name, '……借金の取り立て屋に、ポッドを拾ってこいと言われて。積荷を拾ったら、すぐ航路を戻すつもりでした', 'F_s_did', `${S.name}にドア記録かログインの発信元を突きつける`), title: `${S.name}の告白` },
           said('b_claim', B.name, 'その時間は医務室で健康診断を受けていました。……パスワード、端末に付箋で貼っていました', 'F_b_alibi', `${B.name}から話を聞く`),
@@ -108,6 +108,12 @@ export const NAVTAMPER: CaseTemplate = {
         { id: 'star_sensor', label: '星追跡センサーの誤差で航路がずれた', category: 'accident' },
         { id: 'grav', label: '未知の重力の乱れで航路がそれた', category: 'phenomenon' },
       ],
+      unlock: {
+        'cause:smuggling_tamper': ['nav_log', 'login_trace'], 'cause:nav_bug': ['course_alarm'], 'cause:hijack_signal': ['beacon'],
+        'cause:star_sensor': ['course_alarm'], 'cause:grav': ['debris_chart'],
+        'order:o_door': ['door_comms'], 'order:o_tamper': ['nav_log'], 'order:o_pull': ['relay_pulled'], 'order:o_alarm': ['course_alarm'],
+        'plan:restoreLock': ['nav_log'], 'plan:evade': ['course_alarm'], 'plan:rebootNav': ['course_alarm'],
+      },
       respond: { label: '航路を点検', desc: '司令室で航法の記録と計算を調べる', room: 'bridge', waitLabel: '司令室で航路を監視中' },
       fieldActions: [
         { id: 'deleteWp', room: 'bridge', needs: 'F_waypoint', label: '経由点を消して元の航路に戻す', ask: '経由点が人の手で足されています。消して元の航路に戻してよいですか', why: '岩屑の宙域に入る前に戻すべきだと判断', skill: 'inv', minSkill: 1, action: 'restore' },
@@ -157,7 +163,7 @@ export const NAVTAMPER: CaseTemplate = {
         [B.id]: e.has('login_trace') ? `${B.name}は付箋を剥がし、パスワードを変えた。疑いが晴れて、ほっとした顔をしている。` : `${B.name}は、記録に自分の名前が残ったことを気に病んでいる。`,
       }),
       solve: {
-        policies: { [pilot.id]: [{ kind: 'respond' }], [inv.id]: [{ kind: 'investigate', room: 'comms' }, { kind: 'investigate', room: 'cargo' }] },
+        policies: { [pilot.id]: [{ kind: 'respond' }], [inv.id]: [{ kind: 'investigate', room: 'comms' }, { kind: 'investigate', room: 'cargo' }, ...(['comms', 'cargo'].includes(relayRoom) ? [] : [{ kind: 'investigate' as const, room: relayRoom }])] },
         hyp: { category: 'sabotage', cause: 'smuggling_tamper', order: ['o_door', 'o_tamper', 'o_pull', 'o_alarm'], person: { crew: S.id, role: 'sabotage' }, evidence: ['nav_log', 'login_trace', 'door_comms', 'manifest'], plan: 'restoreLock' },
       },
     };

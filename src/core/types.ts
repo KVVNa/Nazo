@@ -1,7 +1,7 @@
 // 共有型。真相（Truth と事件定義 CaseDef）は gen / sim / judge / cases だけが読む。
 // UI は view/view.ts が作る ViewModel だけを参照する。
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const TICK_SEC = 10; // 1 tick = ゲーム内10秒
 
 export type RoomId = string;
@@ -48,6 +48,7 @@ export interface EvidenceDef {
   key: boolean;
   where: string;
   destroyedByFire?: boolean;
+  relay?: boolean; // 中継器を直した者が気づく手がかり
 }
 
 export interface Truth {
@@ -118,7 +119,7 @@ export type Task =
   | { t: 'move'; path: RoomId[]; progress: number; label: string }
   | { t: 'work'; action: string; remaining: number; total: number; label: string; arg?: string };
 
-export interface Look { skin: number; hair: number; hairStyle: number; suit: number; eyes: number }
+export interface Look { skin: number; hair: number; hairStyle: number; suit: number; eyes: number; extra?: number } // extra: 1 眼鏡, 2 ひげ
 
 export interface Crew {
   id: CrewId;
@@ -195,6 +196,7 @@ export interface PlayerKnowledge {
   knownDead: CrewId[];
   plansKnownDone: number[];
   finalPending: boolean;
+  unlocked?: string[]; // 浮上した仮説の選択肢（'cause:ID' など）
 }
 
 export type Phase = 'briefing' | 'play' | 'ended';
@@ -223,6 +225,28 @@ export interface GameState {
   nextId: number;
   outcome: CaseOutcome | null;
   firedEvents: string[];
+  fixed?: FixedCrew; // 航海モード：固定の乗員（事件定義の再構築に使う）
+}
+
+// 航海モードで事件に渡す乗員。死亡・拘束中の者は含まない。
+export interface FixedCrew {
+  crew: FixedSeed[];
+  cast?: CrewId; // 関係人物に選びたい乗員（条件に合わなければ無視）
+  hull?: number; // 前の事件から持ち越した船体の状態
+}
+export interface FixedSeed {
+  id: CrewId;
+  name: string;
+  roleId: string;
+  role: string;
+  history: string;
+  skills: Record<Skill, number>;
+  exp: number;
+  trust: number;
+  bold: boolean;
+  look: Look;
+  health?: number;
+  lines?: Record<string, string>; // 事件の型ごとの差し替え文（動機など）
 }
 
 export type Action =

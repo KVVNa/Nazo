@@ -13,7 +13,7 @@ export const O2DRAIN: CaseTemplate = {
   build(g) {
     const E = g.byRole('engineer')!;
     const M = g.byRole('medic')!;
-    const Y = find(g, (c) => ['navigator', 'comms', 'security', 'scientist'].includes(c.roleId), [E, M]);
+    const Y = find(g, (c) => ['navigator', 'comms', 'security', 'scientist'].includes(c.roleId), [E, M], g.cast);
     const X = find(g, (c) => ['cargo', 'cook', 'security'].includes(c.roleId), [E, M, Y]);
     const Z = find(g, () => true, [E, M, Y, X]);
     const T = g.clock;
@@ -49,7 +49,7 @@ export const O2DRAIN: CaseTemplate = {
       truth: {
         cause: 'wrong_cartridge',
         events: [
-          { id: 'ev_receive', sec: T0 - 2 * 86400, room: 'cargo', actor: null, text: `2日前の補給で、旧型船用のCO₂除去カートリッジ（容量が3分の1）が届き、${X.name}が正規品だと思って受け取った。`, causes: ['ev_swap'] },
+          { id: 'ev_receive', sec: T0 - 3 * 86400, room: 'cargo', actor: null, text: `3日前の補給で、旧型船用のCO₂除去カートリッジ（容量が3分の1）が届き、${X.name}が正規品だと思って受け取った。`, causes: ['ev_swap'] },
           { id: 'ev_warn', sec: T0, room: 'bridge', actor: null, text: `${T(T0)}、生命維持が「カートリッジ交換推奨」を表示した。`, causes: ['ev_swap'] },
           { id: 'ev_swap', sec: swap, room: 'lifesupport', actor: Y.id, text: `${T(swap)}、当直の${Y.name}が善意で貨物室の予備に交換した。型番を確かめず、記録も付けなかった。`, causes: ['ev_low'] },
           { id: 'ev_low', sec: swap + 60, room: 'lifesupport', actor: null, text: 'CO₂の除去能力が3分の1に落ちた。', causes: ['ev_vent'] },
@@ -59,7 +59,7 @@ export const O2DRAIN: CaseTemplate = {
           { id: 'ev_lock', sec: lock, room: 'airlock', actor: Z.id, text: `${T(lock)}、${Z.name}は予定どおり船体の外部点検でエアロックを使った（無関係）。`, causes: [] },
         ],
         orderCards: [
-          { id: 'o_receive', label: '型番違いのカートリッジが届く', sec: T0 - 2 * 86400 },
+          { id: 'o_receive', label: '型番違いのカートリッジが届く', sec: T0 - 3 * 86400 },
           { id: 'o_swap', label: 'カートリッジが交換される', sec: swap },
           { id: 'o_vent', label: '換気が排気と補充を繰り返し始める', sec: vent },
           { id: 'o_lock', label: 'エアロックが作動する', sec: lock },
@@ -70,7 +70,7 @@ export const O2DRAIN: CaseTemplate = {
           ev('scrub_log', 'CO₂除去率の記録', `CO₂の除去率が${T(swap)}以降、通常の3分の1に落ちている。`, { room: 'lifesupport', skill: 'mech', minSkill: 1, work: 4, fact: 'F_scrub_low', key: true, where: '生命維持室の制御盤' }),
           ev('cartridge_label', '装着中のカートリッジ', '型番LX-2（旧型船用）。この船の規格LX-4の3分の1しか吸収できない。', { room: 'lifesupport', source: 'trace', work: 2, fact: 'F_wrong_cart', key: true, where: '生命維持室の除去装置' }),
           ev('vent_log', '換気制御の記録', `${T(vent)}から、CO₂を船外へ排気しては酸素で補充する運転を繰り返している。`, { room: 'lifesupport', skill: 'mech', minSkill: 1, work: 3, fact: 'F_vent', where: '生命維持室の換気制御盤' }),
-          ev('receipt', '補給の受領記録', `2日前：CO₂除去カートリッジ4本 受領（型番LX-2）。受領確認：${X.name}。`, { room: 'cargo', source: 'record', skill: 'inv', minSkill: 1, work: 4, fact: 'F_receipt', key: true, where: '貨物室の受領端末' }),
+          ev('receipt', '補給の受領記録', `3日前：CO₂除去カートリッジ4本 受領（型番LX-2）。受領確認：${X.name}。`, { room: 'cargo', source: 'record', skill: 'inv', minSkill: 1, work: 4, fact: 'F_receipt', key: true, where: '貨物室の受領端末' }),
           ev('stock', 'カートリッジの在庫', 'LX-2：残り3本（4本から1本減）。LX-4：在庫0。', { room: 'cargo', source: 'record', work: 3, fact: 'F_stock', where: '貨物室の棚' }),
           ev('warn_log', '生命維持の表示記録', `${T(T0)} 「カートリッジ交換推奨」を表示。${T(swap)} 表示解除。交換作業の記録入力はない。`, { room: 'bridge', skill: 'inv', minSkill: 1, work: 4, fact: 'F_warn', key: true, where: '司令室の生命維持ログ' }),
           ev('med_o2', '医療用酸素の使用記録', `${T(medUse)} 医療用酸素ボンベ2本使用（${M.name}）。`, { room: 'medbay', source: 'record', work: 2, fact: 'F_med_o2', where: '医務室の記録' }),
@@ -114,6 +114,12 @@ export const O2DRAIN: CaseTemplate = {
         { id: 'sensor_fault', label: '酸素備蓄の計器が故障している', category: 'accident' },
         { id: 'offgas', label: '船内の材料から出た未知のガスが除去装置を飽和させた', category: 'phenomenon' },
       ],
+      unlock: {
+        'cause:wrong_cartridge': ['cartridge_label', 'receipt', 'scrub_log'], 'cause:o2_theft': ['med_o2', 'm_claim'], 'cause:airlock_leak': ['airlock_log', 'z_claim'],
+        'cause:sensor_fault': ['reserve_alarm'], 'cause:offgas': ['scrub_log'],
+        'order:o_receive': ['receipt', 'x_claim'], 'order:o_swap': ['warn_log', 'scrub_log', 'y_confess'], 'order:o_vent': ['vent_log'], 'order:o_lock': ['airlock_log', 'z_claim'],
+        'plan:tripleCart': ['cartridge_label', 'stock'], 'plan:restAll': ['reserve_alarm'], 'plan:stopVent': ['vent_log'], 'plan:sealAirlock': ['airlock_log', 'z_claim'],
+      },
       respond: { label: '生命維持を点検', desc: '生命維持室で除去装置と換気を調べる', room: 'lifesupport', waitLabel: '生命維持室で指示待ち' },
       fieldActions: [
         { id: 'rest', room: 'lifesupport', needs: 'F_scrub_low', label: '全員に活動を控えるよう呼びかけ', ask: 'CO₂の除去が追いついていません。全員に横になって活動を控えるよう呼びかけてよいですか', why: '除去が追いつかない分、CO₂を出す量を減らすのが先だと判断', action: 'restCall' },

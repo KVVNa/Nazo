@@ -1,10 +1,10 @@
 // 乗員のピクセル絵をパレットと部品の組み合わせで生成する（外部素材なし）。
 // 手描き素材に差し替えるときは portraitURL / drawMini を差し替えればよい。
-export interface Look { skin: number; hair: number; hairStyle: number; suit: number; eyes: number }
+export interface Look { skin: number; hair: number; hairStyle: number; suit: number; eyes: number; extra?: number }
 
 const SKIN = ['#f1c9a5', '#d9a47a', '#b07650', '#7a4a2e'];
 const SKIN_SH = ['#d8a882', '#bb8660', '#8f5c3b', '#5c3620'];
-const HAIR = ['#1d1a24', '#5a3a28', '#c9c2b8', '#a8412f'];
+const HAIR = ['#1d1a24', '#5a3a28', '#c9c2b8', '#a8412f', '#d9b25c'];
 const SUIT = ['#d0782a', '#3e7bd6', '#d9dce6', '#5d6b45'];
 const SUIT_SH = ['#9c5518', '#2a569b', '#a9aebd', '#3f4a2d'];
 const EYES = ['#1b1b28', '#2d5a7a'];
@@ -56,6 +56,12 @@ function drawPortrait(px: Px, l: Look) {
     default: // 刈り上げ
       px(7, 5, 10, 2, hr); px(6, 6, 1, 3, hr); px(17, 6, 1, 3, hr);
       px(14, 14, 3, 1, sh); // 頬の傷
+  }
+  if (l.extra === 1) { // 眼鏡
+    px(8, 11, 4, 1, '#20242c'); px(12, 11, 4, 1, '#20242c'); px(8, 14, 4, 1, '#20242c'); px(12, 14, 4, 1, '#20242c');
+    px(8, 11, 1, 4, '#20242c'); px(11, 11, 2, 1, '#20242c'); px(15, 11, 1, 4, '#20242c');
+  } else if (l.extra === 2) { // ひげ
+    px(8, 15, 8, 3, hr); px(7, 13, 1, 4, hr); px(16, 13, 1, 4, hr); px(11, 15, 2, 1, sh);
   }
 }
 

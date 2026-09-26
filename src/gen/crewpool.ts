@@ -15,7 +15,12 @@ export const ROLES: RoleDef[] = [
   { roleId: 'cargo', role: '荷役担当', skills: { mech: 2, med: 0, inv: 1 }, histories: ['宇宙港の荷役を15年', '倉庫管理の仕事から転職'], suit: 0 },
 ];
 
+import { CREW8_NAMES } from '../voyage/crew8';
+
 export const NAMES = ['ミナ', 'ソラ', 'ケイ', 'ドゥラン', 'リオ', 'アマラ', 'ユーリ', 'ハナ', 'テオ', 'ナディア', 'ジン', 'サナ', 'オルガ', 'カイ', 'ルカ', 'エマ', 'イサク', 'ノア'];
+
+// 検証器が「その回にいない名前」を探すときに使う全候補
+export const ALL_NAMES = [...NAMES, ...CREW8_NAMES];
 
 export function pickCrew(rand: () => number, needRoles: string[] = [], n = 6): CrewSeed[] {
   const pick = <T,>(a: T[]) => a[Math.floor(rand() * a.length)];

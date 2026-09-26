@@ -1,7 +1,7 @@
 // 工作：申告外の積荷を調べられたくない乗員が、外向きの送信を捨てるフィルタを仕込んでいた。救難信号の中継も止まった。
 import type { CaseTemplate } from '../gen/case_api';
 import { ev, said } from '../gen/case_api';
-import { bestLive, find, genericEpilogue, hullMeter, inComm, pct, placeRest } from './common';
+import { bestLive, find, genericEpilogue, hullMeter, inComm, pct, placeRest, line } from './common';
 import { GROUP_NAME } from '../sim/ship';
 
 export const DISTRESS: CaseTemplate = {
@@ -12,7 +12,7 @@ export const DISTRESS: CaseTemplate = {
   needLower: [],
   build(g) {
     const E = g.byRole('engineer')!;
-    const S = find(g, (c) => ['comms', 'security', 'cargo', 'navigator'].includes(c.roleId), [E, g.byRole('medic')]);
+    const S = find(g, (c) => ['comms', 'security', 'cargo', 'navigator'].includes(c.roleId), [E, g.byRole('medic')], g.cast);
     const F = find(g, (c) => c.roleId === 'scientist' || c.roleId === 'navigator', [S]);
     const T = g.clock;
     const T0 = g.hm(g.int(0, 2), g.int(0, 50));
@@ -22,7 +22,7 @@ export const DISTRESS: CaseTemplate = {
     const start = R + g.int(8, 15) * 60;
     const heron0 = g.int(66, 74);
     const grp = g.groupOf('comms');
-    const relayRoom = g.rooms.find((r) => r.group === grp && r.rect[1] === 4)!.id;
+    const relayRoom = g.relayOf(grp);
     const crewInit: Record<string, { room: string; known?: string[]; hides?: string[]; label?: string }> = {
       [S.id]: { room: 'bridge', known: ['F_s_did'], hides: ['F_s_did'] },
       [F.id]: { room: 'bridge', known: ['F_f_belief'] },
@@ -46,9 +46,9 @@ export const DISTRESS: CaseTemplate = {
       truth: {
         cause: 'jam_filter',
         events: [
-          { id: 'ev_cargo', sec: T0 - 5 * 86400, room: 'cargo', actor: null, text: `${S.name}は書類のない精製金属2tを、前の港で密かに積み込ませていた。`, causes: ['ev_login'] },
+          { id: 'ev_cargo', sec: T0 - 5 * 86400, room: 'cargo', actor: null, text: line(S, 'distress.cargo', `${S.name}は書類のない精製金属2tを、前の港で密かに積み込ませていた。`), causes: ['ev_login'] },
           { id: 'ev_login', sec: login, room: 'comms', actor: S.id, text: `${T(login)}、${S.name}は通信室の端末に管理者権限でログインした。`, causes: ['ev_filter'] },
-          { id: 'ev_filter', sec: T0, room: 'comms', actor: S.id, text: `${T(T0)}、外向きの送信をすべて捨てるフィルタを仕込んだ。港への定時連絡で積荷のことが漏れるのを恐れたためだった。`, causes: ['ev_loop', 'ev_fail'] },
+          { id: 'ev_filter', sec: T0, room: 'comms', actor: S.id, text: `${T(T0)}、外向きの送信をすべて捨てるフィルタを仕込んだ。` + line(S, 'distress.fear', '港への定時連絡で積荷のことが漏れるのを恐れたためだった。'), causes: ['ev_loop', 'ev_fail'] },
           { id: 'ev_loop', sec: loop, room: relayRoom, actor: null, text: `設定の書き換えの影響で、${GROUP_NAME[grp]}系統の中継器が再起動を繰り返し始めた。`, causes: [] },
           { id: 'ev_distress', sec: R, room: 'bridge', actor: null, text: `${T(R)}、〈ヘロン〉の救難信号が届いた。`, causes: ['ev_fail'] },
           { id: 'ev_fail', sec: R + 60, room: 'comms', actor: null, text: '自動中継はフィルタに捨てられ、救難センターに届かなかった。', causes: [] },
@@ -67,10 +67,10 @@ export const DISTRESS: CaseTemplate = {
           ev('login', 'ログイン記録', `${T(login)} 通信室2番端末に管理者ログイン：${S.name}。`, { room: 'bridge', skill: 'inv', minSkill: 1, work: 3, fact: 'F_login', key: true, where: '司令室のログイン記録' }),
           ev('antenna_ok', 'アンテナの点検', 'アンテナと増幅器は正常。受信も送信出力も規定どおり。', { room: 'engineering', skill: 'mech', minSkill: 1, work: 4, fact: 'F_antenna_ok', where: '下層機関区のアンテナ制御盤' }),
           ev('solar', '宇宙天気の記録', '太陽活動は静穏。通信障害の予報はない。', { room: 'bridge', work: 2, fact: 'F_solar', where: '司令室の宇宙天気' }),
-          ev('undeclared', '積荷の照合', '書類のない積荷がある：精製金属2t。受け入れの署名は空欄。', { room: 'cargo', source: 'record', skill: 'inv', minSkill: 1, work: 4, fact: 'F_undeclared', key: true, where: `${g.rn('cargo')}の積荷` }),
-          ev('relay_loop', '中継器の状態', '中継器の設定が書き換えられ、再起動を繰り返している。管理者権限の操作の跡。', { room: relayRoom, skill: 'mech', minSkill: 1, work: 3, fact: 'F_loop', where: `${g.rn(relayRoom)}の中継器` }),
+          ev('undeclared', '積荷の照合', line(S, 'distress.undeclared', '書類のない積荷がある：精製金属2t。受け入れの署名は空欄。'), { room: 'cargo', source: 'record', skill: 'inv', minSkill: 1, work: 4, fact: 'F_undeclared', key: true, where: `${g.rn('cargo')}の積荷` }),
+          ev('relay_loop', '中継器の状態', '中継器の設定が書き換えられ、再起動を繰り返している。管理者権限の操作の跡。', { relay: true, room: relayRoom, work: 3, fact: 'F_loop', where: `${g.rn(relayRoom)}の中継器` }),
           said('s_claim', S.name, 'アンテナの劣化でしょう。前から送信が不安定でしたから', 'F_s_lie', `${S.name}から話を聞く`),
-          { ...said('s_confess', S.name, '……積荷を調べられたら終わりなんです。救助隊が来れば、港の検査も来る。まさか救難信号まで止まるなんて', 'F_s_did', `${S.name}にフィルタの設定かログイン記録を突きつける`), title: `${S.name}の告白` },
+          { ...said('s_confess', S.name, line(S, 'distress.confess', '……積荷を調べられたら終わりなんです。救助隊が来れば、港の検査も来る。まさか救難信号まで止まるなんて'), 'F_s_did', `${S.name}にフィルタの設定かログイン記録を突きつける`), title: `${S.name}の告白` },
           said('f_claim', F.name, '太陽フレアの影響じゃないでしょうか。この時期は多いと聞きます', 'F_f_belief', `${F.name}から話を聞く`),
         ],
         misleads: [
@@ -96,6 +96,12 @@ export const DISTRESS: CaseTemplate = {
         { id: 'external_jam', label: 'よその船が妨害電波を出している', category: 'sabotage' },
         { id: 'solar', label: '太陽活動の乱れで通信が妨げられている', category: 'phenomenon' },
       ],
+      unlock: {
+        'cause:jam_filter': ['tx_log', 'filter_rule'], 'cause:antenna': ['distress', 's_claim'], 'cause:software': ['tx_log'],
+        'cause:external_jam': ['distress'], 'cause:solar': ['f_claim'],
+        'order:o_login': ['login'], 'order:o_filter': ['filter_rule', 'tx_log'], 'order:o_loop': ['relay_loop'], 'order:o_distress': ['distress'],
+        'plan:removeFilter': ['filter_rule', 'tx_log'], 'plan:divert': ['distress'], 'plan:rebootComms': ['distress'],
+      },
       respond: { label: '通信系を点検', desc: '通信室で送信機と設定を調べる', room: 'comms', waitLabel: '通信室で指示待ち' },
       fieldActions: [
         { id: 'delFilter', room: 'comms', needs: 'F_filter', label: '不審な送信フィルタを消す', ask: '送信フィルタに不審な規則があります。消して救難信号を中継してよいですか', why: '救難信号が届かないままでは人が死ぬと判断', skill: 'mech', minSkill: 2, action: 'removeFilter' },
@@ -139,11 +145,11 @@ export const DISTRESS: CaseTemplate = {
       resolved: (a) => !a.v.lost && (a.v.link >= 180 || (!!a.v.divert && a.now() >= a.v.arrive)),
       resolvedText: '〈ヘロン〉の乗員に救助の手が届く。',
       epilogue: (e) => genericEpilogue(e, {
-        [S.id]: e.crew.find((c) => c.id === S.id)!.confessed ? `${S.name}は積荷の件をすべて話し、港での検査に立ち会うと約束した。` : e.grade === '真相解明' ? `${S.name}は最後まで目を合わせなかった。` : `${S.name}は何事もなかったように通信の当番に戻った。`,
+        [S.id]: e.crew.find((c) => c.id === S.id)!.confessed ? line(S, 'distress.epi', `${S.name}は積荷の件をすべて話し、港での検査に立ち会うと約束した。`) : e.grade === '真相解明' ? `${S.name}は最後まで目を合わせなかった。` : `${S.name}は何事もなかったように通信の当番に戻った。`,
         [F.id]: e.v.lost ? `${F.name}は、〈ヘロン〉の最後の通信を何度も聞き返している。` : `${F.name}は〈ヘロン〉の乗員から届いた礼のメッセージを、船内の掲示板に貼った。`,
       }),
       solve: {
-        policies: { [fixer.id]: [{ kind: 'respond' }], [inv.id]: [{ kind: 'investigate', room: 'bridge' }, { kind: 'investigate', room: 'cargo' }] },
+        policies: { [fixer.id]: [{ kind: 'respond' }], [inv.id]: [{ kind: 'investigate', room: 'bridge' }, { kind: 'investigate', room: 'cargo' }, ...(['bridge', 'cargo', 'comms'].includes(relayRoom) ? [] : [{ kind: 'investigate' as const, room: relayRoom }])] },
         hyp: { category: 'sabotage', cause: 'jam_filter', order: ['o_login', 'o_filter', 'o_loop', 'o_distress'], person: { crew: S.id, role: 'sabotage' }, evidence: ['tx_log', 'filter_rule', 'login', 'undeclared'], plan: 'removeFilter' },
       },
     };

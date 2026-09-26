@@ -12,7 +12,7 @@ export const H2S: CaseTemplate = {
   build(g) {
     const E = g.byRole('engineer')!;
     const M = g.byRole('medic')!;
-    const C = find(g, (c) => ['navigator', 'comms', 'security', 'cargo', 'cook'].includes(c.roleId), [E, M]);
+    const C = find(g, (c) => ['navigator', 'comms', 'security', 'cargo', 'cook'].includes(c.roleId), [E, M], g.cast);
     const W = find(g, () => true, [E, M, C]);
     const T = g.clock;
     const T0 = g.hm(g.int(1, 3), g.int(0, 50));
@@ -68,7 +68,7 @@ export const H2S: CaseTemplate = {
           ev('gas_reading', '空気の分析', '硫化水素を検出：下層40ppm、居住区15ppm、司令室5ppm。濃いところでは臭いを感じなくなる濃さだ。', { room: 'lab', skill: 'inv', minSkill: 2, work: 5, fact: 'F_h2s', key: true, where: `${g.rn('lab')}の分析装置（調査技能2以上）` }),
           ev('symptoms', '診察記録', '症状は頭痛・めまい・目の刺激。下層で働いた者と居住区で寝ていた者ほど重い。', { room: 'medbay', skill: 'med', minSkill: 1, work: 3, fact: 'F_symptoms', key: true, where: '医務室（医療技能が必要）' }),
           ev('alarm_ack', '警報の操作記録', `2日前：貯水槽の高温警報を「確認済み」に変更（${C.name}）。対応の記録はない。`, { room: 'bridge', source: 'record', skill: 'inv', minSkill: 1, work: 4, fact: 'F_ack', where: '司令室の警報記録' }),
-          ev('relay_corr', '中継器の接点', '下層の中継器の銀の接点が黒く変色している。硫黄の化合物で錆びたものだ。', { room: 'engineering', skill: 'mech', minSkill: 1, work: 3, fact: 'F_corr', where: '下層機関区の中継器' }),
+          ev('relay_corr', '中継器の接点', '下層の中継器の銀の接点が黒く変色している。硫黄の化合物で錆びたものだ。', { relay: true, room: 'engineering', skill: 'mech', minSkill: 1, work: 3, fact: 'F_corr', where: '下層機関区の中継器' }),
           ev('ref_ok', '冷媒の点検', '冷媒の圧力は正常。漏れはない。', { room: 'engineering', skill: 'mech', minSkill: 1, work: 3, fact: 'F_ref_ok', where: '下層機関区の冷却系' }),
           said('w_claim', W.name, '夕方は卵が腐ったような臭いがしましたけど、夜にはもうしなくなりました。換気で抜けたんだと思います', 'F_w_smell', `${W.name}から話を聞く`),
           said('e_claim', E.name, '冷媒が漏れてるんじゃないか。頭が痛いのはそのせいだと思う', 'F_e_belief', `${E.name}から話を聞く`),
@@ -100,6 +100,12 @@ export const H2S: CaseTemplate = {
         { id: 'food', label: '食べ物に当たった', category: 'accident' },
         { id: 'gas_sabotage', label: '誰かが有毒なガスをまいた', category: 'sabotage' },
       ],
+      unlock: {
+        'cause:h2s_bloom': ['biofilm', 'gas_reading', 'tank_temp'], 'cause:refrigerant': ['e_claim'], 'cause:co_leak': ['headache'],
+        'cause:food': ['headache'], 'cause:gas_sabotage': ['gas_reading'],
+        'order:o_fail': ['tank_temp'], 'order:o_ack': ['alarm_ack', 'c_confess'], 'order:o_smell': ['w_claim', 'biofilm'], 'order:o_corrode': ['headache'],
+        'plan:treatTank': ['biofilm', 'tank_temp'], 'plan:ventOnly': ['headache'], 'plan:evacLower': ['symptoms', 'gas_reading'], 'plan:refrigerant': ['e_claim'],
+      },
       respond: { label: '体調不良の原因を探す', desc: '下層の機関区で空調と冷却系を調べる', room: 'engineering', waitLabel: '機関区で指示待ち' },
       fieldActions: [
         { id: 'heaterOff', room: 'waterplant', needs: 'F_tank', label: '貯水槽のヒーターを止める', ask: '貯水槽が32℃まで温まっています。ヒーターを止めてよいですか', why: '水温が上がり続けるのはまずいと判断', skill: 'mech', minSkill: 1, action: 'heaterOff' },
@@ -150,7 +156,7 @@ export const H2S: CaseTemplate = {
         [E.id]: e.v.clean ? `${E.name}は貯水槽に温度の二重監視を付けた。` : '',
       }),
       solve: {
-        policies: { [fixer.id]: [{ kind: 'investigate', room: 'waterplant' }], [sci.id]: [{ kind: 'investigate', room: 'lab' }], [med.id]: [{ kind: 'investigate', room: 'medbay' }] },
+        policies: { [fixer.id]: [{ kind: 'investigate', room: 'waterplant' }], [sci.id]: [{ kind: 'investigate', room: 'lab' }, { kind: 'investigate', room: 'bridge' }], [med.id]: [{ kind: 'investigate', room: 'medbay' }] },
         hyp: { category: 'phenomenon', cause: 'h2s_bloom', order: ['o_fail', 'o_ack', 'o_smell', 'o_corrode'], person: { crew: C.id, role: 'falsified' }, evidence: ['tank_temp', 'biofilm', 'gas_reading', 'symptoms'], plan: 'treatTank' },
       },
     };

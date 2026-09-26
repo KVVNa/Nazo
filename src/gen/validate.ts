@@ -1,11 +1,11 @@
 // 静的検証：到達性、人物の時空間整合、因果のつながり、証拠と真相の対応、誤誘導の解消可能性、技能の足りる乗員の有無。
-import type { RoomId } from '../core/types';
+import type { FixedCrew, RoomId } from '../core/types';
 import { buildCase } from './registry';
 import { LOWER_ROOMS, SIDE_ROOMS, reachableFrom, travelMinutes } from '../sim/ship';
-import { NAMES } from './crewpool';
+import { ALL_NAMES as NAMES } from './crewpool';
 
-export function validateStatic(templateId: string, genSeed: number): string[] {
-  const { def, ship, crew } = buildCase(templateId, genSeed);
+export function validateStatic(templateId: string, genSeed: number, fixed?: FixedCrew): string[] {
+  const { def, ship, crew } = buildCase(templateId, genSeed, fixed);
   const out: string[] = [];
   const t = def.truth;
   const has = (r: RoomId) => ship.rooms.some((x) => x.id === r);
@@ -75,6 +75,31 @@ export function validateStatic(templateId: string, genSeed: number): string[] {
   if (!has(def.respond.room)) out.push('現場対応の区画が船にない');
   for (const f of def.fieldActions) if (!has(f.room)) out.push(`現場の手当て ${f.id} の区画が船にない`);
   if (!def.plans.some((p) => p.score >= 1)) out.push('完全に有効な対処がない');
+  // 組み立て式：必須証拠だけで関係人物が一人に絞れる。誤った原因はどれも客観証拠で否定できる
+  if (def.identify) {
+    const keyIds = new Set(t.evidence.filter((e) => e.key).map((e) => e.id));
+    let left = new Set(crew.map((c) => c.id));
+    for (const it of def.identify) {
+      if (!evIds.has(it.evidence)) { out.push(`絞り込みの証拠 ${it.evidence} がない`); continue; }
+      if (keyIds.has(it.evidence)) left = new Set([...left].filter((x) => it.suspects.includes(x)));
+    }
+    if (!t.responsible || left.size !== 1 || !left.has(t.responsible.crew)) out.push(`必須証拠で関係人物が一人に絞れない（残り：${[...left].join(',')}）`);
+  }
+  if (def.causeRefutes) {
+    for (const co of def.causeOptions) {
+      if (co.id === t.cause) continue;
+      const r = (def.causeRefutes[co.id] ?? []).filter((id) => { const e = t.evidence.find((x) => x.id === id); return e && e.source !== 'testimony'; });
+      if (!r.length) out.push(`原因の候補 ${co.id} を否定する証拠がない`);
+    }
+  }
+  // 仮説の選択肢は、どれも何かの手がかりで浮上する
+  const keys = [...def.causeOptions.map((c) => 'cause:' + c.id), ...t.orderCards.map((c) => 'order:' + c.id), ...def.plans.map((p) => 'plan:' + p.id)];
+  for (const k of keys) {
+    const evs = def.unlock[k];
+    if (!evs?.length) out.push(`選択肢 ${k} を浮上させる手がかりがない`);
+    else for (const e of evs) if (!evIds.has(e)) out.push(`選択肢 ${k} の手がかり ${e} が証拠にない`);
+  }
+  for (const k of Object.keys(def.unlock)) if (!keys.includes(k)) out.push(`浮上表に余分な項目 ${k}`);
 
   // ---- 文章の辻褄 ----
   const texts: [string, string][] = [

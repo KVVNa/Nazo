@@ -15,15 +15,19 @@ interface Draft {
 }
 let draft: Draft | null = null;
 
+const UNKNOWN = '_unknown';
 const CATS: [Hypothesis['category'], string][] = [
   ['accident', '事故・故障'], ['sabotage', '工作・犯罪'], ['phenomenon', '未知の現象'],
 ];
 
 export function renderHypothesis(v: ViewModel, cb: { submit: (h: Hypothesis) => void; close: () => void }): HTMLElement {
-  if (!draft || draft.order.length !== v.form.orderCards.length) {
-    draft = { category: null, cause: null, order: v.form.orderCards.map((c) => c.id), person: '', role: 'falsified', evidence: [], plan: null };
-  }
+  if (!draft) draft = { category: null, cause: null, order: [], person: '', role: 'falsified', evidence: [], plan: null };
   const d = draft;
+  // 浮上した出来事カードは末尾に足し、並べた順は保つ
+  const cardIds = v.form.orderCards.map((c) => c.id);
+  d.order = [...d.order.filter((id) => cardIds.includes(id)), ...cardIds.filter((id) => !d.order.includes(id))];
+  if (d.cause && d.cause !== UNKNOWN && !v.form.causes.some((c) => c.id === d.cause)) d.cause = null;
+  if (d.plan && !v.form.plans.some((p) => p.id === d.plan)) d.plan = null;
   const root = h('div', {});
   const rerender = () => root.replaceWith(renderHypothesis(v, cb));
   const radio = (name: string, checked: boolean, onchange: () => void, label: Node | string, warn?: string) =>
@@ -45,10 +49,14 @@ export function renderHypothesis(v: ViewModel, cb: { submit: (h: Hypothesis) => 
     h('div', { class: 'form-sec' }, h('h3', {}, '1. 原因の種類'),
       CATS.map(([id, l]) => radio('cat', d.category === id, () => { d.category = id; }, l))),
 
+    h('p', { class: 'hint', style: { margin: '10px 0' } }, '選べる候補は、集めた手がかりから浮かんだ見立てだけ。調べるほど候補が増える（候補があること自体は正しさの印ではない）。'),
+
     h('div', { class: 'form-sec' }, h('h3', {}, '2. 原因となった具体的な出来事'),
-      v.form.causes.map((c) => radio('cause', d.cause === c.id, () => { d.cause = c.id; }, c.label))),
+      v.form.causes.map((c) => radio('cause', d.cause === c.id, () => { d.cause = c.id; }, c.label)),
+      radio('cause', d.cause === UNKNOWN, () => { d.cause = UNKNOWN; }, h('span', { class: 'muted' }, 'まだ分からない（分かっている範囲で対処する）'))),
 
     h('div', { class: 'form-sec' }, h('h3', {}, '3. 出来事の順番（上が先）'),
+      d.order.length ? null : h('p', { class: 'small muted' }, 'まだ並べられる出来事がない。'),
       d.order.map((id, i) => h('div', { class: 'order-row' },
         h('span', { class: 'n' }, i + 1), h('span', { class: 'lbl' }, labelOf(id)),
         h('button', { 'aria-label': '上へ', disabled: i === 0, onclick: () => moveOrder(i, -1) }, '↑'),

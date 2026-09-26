@@ -6,6 +6,8 @@ import { SCHEMA_VERSION, type GameState } from '../core/types';
 const SNAP_KEY = 'ssm.snapshot.v1';
 const VOYAGE_KEY = 'ssm.voyage.v1';
 const SETTINGS_KEY = 'ssm.settings.v1';
+const CAMPAIGN_KEY = 'ssm.campaign.v1'; // 航海モードの進行（固定乗員の生死・信頼・分かったこと）
+const VCASE_KEY = 'ssm.vcase.v1'; // 航海モードの事件中の自動保存
 
 export interface Settings { sound: boolean; reduceEffects: boolean; speed: number }
 export interface VoyageCase {
@@ -26,11 +28,12 @@ function safeSet(key: string, v: string): boolean {
 }
 
 export function saveSnapshot(s: GameState): boolean {
+  if (s.fixed) return safeSet(VCASE_KEY, JSON.stringify({ schema: SCHEMA_VERSION, savedAt: new Date().toISOString(), state: s }));
   return safeSet(SNAP_KEY, JSON.stringify({ schema: SCHEMA_VERSION, savedAt: new Date().toISOString(), state: s }));
 }
 
-export function loadSnapshot(): GameState | null {
-  const raw = safeGet(SNAP_KEY);
+export function loadSnapshot(voyage = false): GameState | null {
+  const raw = safeGet(voyage ? VCASE_KEY : SNAP_KEY);
   if (!raw) return null;
   try {
     const o = JSON.parse(raw);
@@ -38,8 +41,22 @@ export function loadSnapshot(): GameState | null {
   } catch { return null; }
 }
 
-export function clearSnapshot() {
-  try { localStorage.removeItem(SNAP_KEY); } catch { /* 無視 */ }
+export function clearSnapshot(voyage = false) {
+  try { localStorage.removeItem(voyage ? VCASE_KEY : SNAP_KEY); } catch { /* 無視 */ }
+}
+
+// ---------- 航海モード ----------
+export function saveCampaign(v: unknown): boolean { return safeSet(CAMPAIGN_KEY, JSON.stringify(v)); }
+export function loadCampaign<T>(): T | null {
+  const raw = safeGet(CAMPAIGN_KEY);
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    return v && v.kind === 'campaign' && typeof v.schema === 'number' && v.schema <= 1 ? v as T : null;
+  } catch { return null; }
+}
+export function clearCampaign() {
+  try { localStorage.removeItem(CAMPAIGN_KEY); localStorage.removeItem(VCASE_KEY); } catch { /* 無視 */ }
 }
 
 // 古いスキーマのセーブを現行に合わせる。未知の新しい版は読まない。
@@ -48,7 +65,10 @@ export function migrateState(st: any): GameState | null {
   if (st.schema > SCHEMA_VERSION) return null;
   // schema 1（第1話だけの試作）の途中経過は事件の作りが違うので引き継がない
   if (st.schema < 2) return null;
+  // schema 2 までは部屋割りが事件ごとに違った。固定の見取り図とは合わないので、途中経過は引き継がない
+  if (st.schema < 3) return null;
   if (st.player?.board && !st.player.board.notes) st.player.board.notes = [];
+  // unlocked がない古いセーブは、次に証拠を得たときに計算し直される
   return st as GameState;
 }
 

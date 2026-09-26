@@ -11,5 +11,6 @@ import { SEU } from './seu';
 import { DUST } from './dust';
 import { H2S } from './h2s';
 import { CREAK } from './creak';
+import { PLOT } from './plot';
 
-export const TEMPLATES: CaseTemplate[] = [POWER, O2DRAIN, PRESSURE, FOOD, NAVTAMPER, PAINKILLER, FALSEFIRE, DISTRESS, SEU, DUST, H2S, CREAK];
+export const TEMPLATES: CaseTemplate[] = [POWER, O2DRAIN, PRESSURE, FOOD, NAVTAMPER, PAINKILLER, FALSEFIRE, DISTRESS, SEU, DUST, H2S, CREAK, PLOT];

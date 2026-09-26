@@ -4,7 +4,7 @@ import { generateCase, generateWithReport, mixSeed, newState } from '../src/gen/
 import { validateStatic } from '../src/gen/validate';
 import { validateDynamic, runSolve } from '../src/gen/validate_dynamic';
 import { TEMPLATES, caseOf } from '../src/gen/registry';
-import { applyAction, replay, step } from '../src/sim/sim';
+import { applyAction, grantEvidence, replay, step } from '../src/sim/sim';
 import { commOk } from '../src/sim/ship';
 import { buildView } from '../src/view/view';
 import { evaluateCase, judge } from '../src/judge/judge';
@@ -16,9 +16,10 @@ const comparable = (s: GameState) => hashState({ ...s, player: { ...s.player, bo
 const started = (tid: string, seed = 1) => { const s = generateCase(seed, tid); applyAction(s, { type: 'begin' }); return s; };
 
 describe('事件生成と検証器（全テンプレート）', () => {
-  test('12種の事件がある（事故・工作・未知の現象が4種ずつ）', () => {
-    expect(TEMPLATES.length).toBe(12);
-    for (const cat of ['accident', 'sabotage', 'phenomenon']) expect(TEMPLATES.filter((t) => t.category === cat).length).toBe(4);
+  test('12種の型と組み立て式の工作事件がある（型は事故・工作・未知の現象が4種ずつ）', () => {
+    expect(TEMPLATES.length).toBe(13);
+    const fixed = TEMPLATES.filter((t) => t.id !== 'plot');
+    for (const cat of ['accident', 'sabotage', 'phenomenon']) expect(fixed.filter((t) => t.category === cat).length).toBe(4);
   });
   for (const t of TEMPLATES) {
     test(`${t.title}：25シードすべて生成でき、初回の採用率が8割以上`, () => {
@@ -216,5 +217,26 @@ describe('検証器の動的チェック', () => {
   test('mixSeed は重なりにくい', () => {
     const set = new Set(Array.from({ length: 1000 }, (_, i) => mixSeed(i, 0)));
     expect(set.size).toBe(1000);
+  });
+});
+
+describe('手がかりで選択肢が浮上する', () => {
+  for (const t of TEMPLATES) {
+    test(`${t.title}：開始時は正解の原因が選べず、手がかりを得ると浮上して記録に出る`, () => {
+      const s = started(t.id, 8);
+      const def = caseOf(s);
+      const v0 = buildView(s);
+      expect(v0.form.causes.map((c) => c.id)).not.toContain(def.solve.hyp.cause);
+      expect(v0.form.orderCards.length).toBeLessThan(s.truth.orderCards.length);
+      const ev = def.unlock['cause:' + def.solve.hyp.cause][0];
+      grantEvidence(s, ev);
+      expect(buildView(s).form.causes.map((c) => c.id)).toContain(def.solve.hyp.cause);
+      expect(s.player.log.some((l) => l.text.includes('新しい見立て'))).toBe(true);
+    });
+  }
+  test('並べていない出来事は順番の正解に数えない', () => {
+    const s = started('lost_power', 4);
+    const h = caseOf(s).solve.hyp;
+    expect(judge(s, { ...h, order: h.order.slice(0, 2) }).parts.order).toBeLessThan(0.5);
   });
 });

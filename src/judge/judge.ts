@@ -1,5 +1,6 @@
 // 構造化された仮説を部分評価する。事件中は内訳を見せない（事件終了画面でだけ使う）。
 import type { GameState, Hypothesis } from '../core/types';
+import { voyageWords } from '../gen/voyage_words';
 import { caseOf } from '../gen/registry';
 import { planDefs } from '../sim/sim';
 
@@ -17,7 +18,8 @@ export function judge(s: GameState, h: Hypothesis): Judgement {
   for (let i = 0; i < trueOrder.length; i++)
     for (let j = i + 1; j < trueOrder.length; j++) {
       n++;
-      if (h.order.indexOf(trueOrder[i]) < h.order.indexOf(trueOrder[j])) okp++;
+      const a = h.order.indexOf(trueOrder[i]), b = h.order.indexOf(trueOrder[j]);
+      if (a >= 0 && b >= 0 && a < b) okp++; // 並べていない出来事は正解に数えない
     }
   const order = n ? okp / n : 0;
   let person = 0;
@@ -95,6 +97,8 @@ export function evaluateCase(s: GameState): CaseResult {
     crew: s.crew.map((c) => ({ id: c.id, name: c.name, role: c.role, alive: c.alive, confessed: c.mind.confessed, detained: c.policy.kind === 'detained', trust: c.trust })),
     responsible: t.responsible?.crew ?? null,
   });
+  // 航海モードでは寄港がない。行き先は〈ハース〉への到着になる
+  if (s.fixed) for (let i = 0; i < epilogue.length; i++) epilogue[i] = voyageWords(epilogue[i]);
   const sorted = [...t.events].sort((a, b) => a.sec - b.sec);
   return {
     grade,
@@ -113,3 +117,4 @@ export function evaluateCase(s: GameState): CaseResult {
     planLabel: last ? planDefs(s).find((p) => p.id === last.plan)?.label ?? null : null,
   };
 }
+

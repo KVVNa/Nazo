@@ -34,6 +34,29 @@ export function grantEvidence(s: GameState, id: string) {
   s.player.evidence.push(id);
   const n = s.player.board.cards.length;
   s.player.board.cards.push({ id, x: 12 + (n % 2) * 170, y: 16 + Math.floor(n / 2) * 116 });
+  // 新しい手がかりで浮上した見立てを知らせる
+  const before = new Set(s.player.unlocked ?? []);
+  const now = unlockedKeys(s);
+  s.player.unlocked = now;
+  const fresh = now.filter((k) => !before.has(k));
+  if (fresh.length && s.phase === 'play') {
+    const def = caseOf(s);
+    const label = (k: string) => {
+      const [kind, key] = k.split(':');
+      if (kind === 'cause') return `原因「${def.causeOptions.find((c) => c.id === key)?.label}」`;
+      if (kind === 'order') return `出来事「${s.truth.orderCards.find((c) => c.id === key)?.label}」`;
+      return `対処「${planLabel(s, key)}」`;
+    };
+    s.player.log.push({ id: s.nextId++, sec: nowSec(s), deliveredSec: nowSec(s), crew: null, delayed: false, kind: 'system',
+      text: `［${evDef(s, id).title}］から新しい見立てが浮かんだ：${fresh.map(label).join('、')}` });
+    s.player.unread++;
+  }
+}
+
+// 手元の証拠から浮上している仮説の選択肢
+export function unlockedKeys(s: GameState): string[] {
+  const have = new Set(s.player.evidence);
+  return Object.entries(caseOf(s).unlock).filter(([, evs]) => evs.some((e) => have.has(e))).map(([k]) => k);
 }
 
 function report(s: GameState, c: Crew, r: Omit<Report, 'id' | 'crew' | 'sec' | 'room' | 'offline'>) {
@@ -55,8 +78,8 @@ function makeApi(s: GameState, res: StepResult): Api {
     rn: (r) => roomName(s.ship, r),
     crew: (id) => crewById(s, id),
     crews: () => s.crew,
-    log: (text, kind = 'system', pause) => {
-      pushLog(s, { sec: nowSec(s), crew: null, text, delayed: false, kind });
+    log: (text, kind = 'system', pause, evidence) => {
+      pushLog(s, { sec: nowSec(s), crew: null, text, delayed: false, kind, evidence });
       if (pause) res.pause = res.pause ?? pause;
     },
     alarm: (text, pause) => {
@@ -289,6 +312,13 @@ function finishWork(s: GameState, c: Crew, action: string, api: Api, arg?: strin
         s.world.vars['relay_' + g] = 1;
         api.setComm(g, false);
         report(s, c, { text: `${GROUP_NAME[g]}系統の通信中継器を予備回路につなぎ直した。`, important: false, kind: 'report' });
+        // 直した者は、中継器が落ちた理由に気づく
+        for (const e of s.truth.evidence) {
+          if (!e.relay || e.room !== c.room || c.mind.known.includes(e.fact + '@' + e.id)) continue;
+          learn(c, e.fact + '@' + e.id);
+          learn(c, e.fact);
+          if (!c.mind.hides.includes(e.fact)) report(s, c, { text: `［${e.title}］${e.text}`, evidence: [e.id], important: true, kind: 'report', reason: '直すときに、落ちた理由が目についた' });
+        }
       }
       return;
     }
@@ -486,6 +516,7 @@ export function applyAction(s: GameState, a: Action): StepResult {
   switch (a.type) {
     case 'begin':
       s.phase = 'play';
+      s.player.unlocked = unlockedKeys(s);
       pushLog(s, { sec, crew: null, text: def.alarmText, delayed: false, kind: 'system', evidence: def.initialEvidence });
       break;
     case 'setPolicy':

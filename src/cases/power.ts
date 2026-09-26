@@ -14,7 +14,7 @@ export const POWER: CaseTemplate = {
   build(g) {
     const E = g.byRole('engineer')!;
     const M = g.byRole('medic')!;
-    const R = find(g, (c) => ['security', 'cargo', 'comms', 'cook'].includes(c.roleId), [E, M]);
+    const R = find(g, (c) => ['security', 'cargo', 'comms', 'cook'].includes(c.roleId), [E, M], g.cast);
     const K = find(g, () => true, [E, M, R]);
     const trip = g.hm(g.int(1, 3), g.int(0, 50));
     const start = trip + 6 * 60;
@@ -113,6 +113,12 @@ export const POWER: CaseTemplate = {
         { id: 'overload', label: '機器の過負荷で主遮断器が落ちた', category: 'accident' },
         { id: 'radiation', label: '宇宙線の突発的な増加で制御系が誤作動した', category: 'phenomenon' },
       ],
+      unlock: {
+        'cause:coolant_leak': ['coolant_trace', 'pressure_log', 'mina_coolant'], 'cause:panel_sabotage': ['sora_flash', 'door_log'],
+        'cause:cell_failure': ['cell_measure', 'maint_record'], 'cause:overload': ['panel_log'], 'cause:radiation': ['light_log'],
+        'order:o_pressure': ['pressure_log', 'mina_coolant'], 'order:o_door': ['door_log', 'kei_cargo'], 'order:o_flicker': ['light_log', 'sora_flash'], 'order:o_trip': ['alarm'],
+        'plan:sealDryRestart': ['coolant_trace'], 'plan:dryRestart': ['panel_log', 'coolant_trace'], 'plan:restartNow': ['alarm'], 'plan:shed': ['alarm'], 'plan:swapCell': ['cell_measure', 'maint_record', 'inventory'],
+      },
       respond: { label: '電源を復旧', desc: '配電室へ向かい、点検と復旧作業', room: 'powerroom', waitLabel: '主電源の再投入は船長の判断待ち' },
       fieldActions: [
         { id: 'seal', room: 'powerroom', needs: 'F_leak', label: '漏れている配管を仮封止', ask: '配電室の天井配管から冷却液が漏れています。仮封止してよいですか', why: '漏れを放置すると配電盤がさらに濡れて復旧が遠のくと判断', skill: 'mech', minSkill: 1, action: 'seal' },

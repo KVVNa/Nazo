@@ -4,23 +4,23 @@ import { portraitURL } from '../render/sprites';
 
 const mark = (x: number) => (x >= 0.99 ? h('span', { class: 'mark-ok' }, '正しい') : x > 0.001 ? h('span', { class: 'mark-part' }, '一部') : h('span', { class: 'mark-ng' }, '誤り'));
 
-export function renderResult(v: ViewModel, cb: { save: () => boolean; saved: () => boolean; title: () => void }): HTMLElement {
+export function renderResult(v: ViewModel, cb: { save: () => boolean; saved: () => boolean; title: () => void; voyage?: () => void }): HTMLElement {
   const r = v.result!;
   const cls = r.grade === '真相解明' ? 'good' : r.grade === '部分解明' ? 'mid' : 'bad';
   const j = r.judgement;
-  const saveBtn = h('button', { class: 'btn primary', disabled: cb.saved() }, cb.saved() ? '航海記録に保存済み' : '航海記録に保存') as HTMLButtonElement;
+  const saveBtn = h('button', { class: 'btn primary', disabled: cb.saved() }, cb.saved() ? '事件記録に保存済み' : '事件記録に保存') as HTMLButtonElement;
   const saveMsg = h('p', { class: 'small muted' });
   saveBtn.addEventListener('click', () => {
     const ok = cb.save();
     saveBtn.disabled = true;
-    saveBtn.textContent = ok ? '航海記録に保存済み' : '保存できなかった';
-    saveMsg.textContent = ok ? '設定・航海記録から書き出せます。' : 'ブラウザの保存領域に書き込めませんでした。';
+    saveBtn.textContent = ok ? '事件記録に保存済み' : '保存できなかった';
+    saveMsg.textContent = ok ? '設定・事件記録から書き出せます。' : 'ブラウザの保存領域に書き込めませんでした。';
   });
   const planName = v.form.plans.find((p) => p.id === r.hyp?.plan)?.label;
   return h('div', { class: 'screen' },
     h('p', { class: 'muted small', style: { margin: 0 } }, `事件記録：${v.title}　${v.clock}`),
     h('div', { class: 'grade ' + cls }, r.shipLost ? '船は失われた' : r.grade),
-    h('p', { style: { marginTop: 0 } }, r.reasonText + '。' + (r.resolved ? '電力の危機は去った。' : '電力の危機は解けていない。')),
+    h('p', { style: { marginTop: 0 } }, r.reasonText + '。' + (r.resolved ? '危機は去った。' : '危機はまだ解けていない。')),
 
     h('div', { class: 'card' },
       h('h3', {}, '最後に提出した仮説の評価'),
@@ -61,8 +61,7 @@ export function renderResult(v: ViewModel, cb: { save: () => boolean; saved: () 
       h('h3', {}, 'その後'),
       r.epilogue.map((l) => h('p', { class: 'small', style: { margin: '6px 0' } }, l))),
 
-    saveBtn, saveMsg,
-    h('button', { class: 'btn', onclick: cb.title }, 'タイトルへ'),
-    h('p', { class: 'small muted' }, '試作版は1事件のみ。次の事件への引き継ぎ（修理・治療・会話）は今後の版で追加する。'),
+    cb.voyage ? h('button', { class: 'btn primary', onclick: cb.voyage }, '航海に戻る') : [saveBtn, saveMsg, h('button', { class: 'btn', onclick: cb.title }, 'タイトルへ')],
+    cb.voyage ? h('p', { class: 'small muted' }, 'この結果は航海に記録された。死んだ乗員は戻らない。') : null,
   );
 }

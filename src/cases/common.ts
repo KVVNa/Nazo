@@ -7,9 +7,17 @@ export const pct = (label: string, v: number, warnBelow = 50, badBelow = 25, sub
   ({ label, value: v, text: Math.round(v) + '%', sub, level: v < badBelow ? 'bad' : v < warnBelow ? 'warn' : '' });
 
 // 与えた条件に合う乗員を、指定の順で探す
-export function find(g: GenCtx, pred: (c: CrewSeed) => boolean, exclude: (CrewSeed | undefined)[] = []): CrewSeed {
-  const c = g.shuffle(g.others(...exclude)).find(pred) ?? g.others(...exclude)[0];
-  return c;
+// prefer に乗員IDを渡すと、条件に合う限りその乗員を選ぶ（航海モードで関係人物を人物像に合わせる）。
+// 乱数の消費は prefer の有無で変えない（同じシードで同じ居場所・時刻になるように）。
+export function find(g: GenCtx, pred: (c: CrewSeed) => boolean, exclude: (CrewSeed | undefined)[] = [], prefer?: string): CrewSeed {
+  const pool = g.shuffle(g.others(...exclude));
+  const want = prefer ? pool.find((c) => c.id === prefer && pred(c)) : undefined;
+  return want ?? pool.find(pred) ?? g.others(...exclude)[0];
+}
+
+// 事件の型ごとの差し替え文（航海モードの固定乗員だけが持つ）
+export function line(c: CrewSeed, key: string, fallback: string): string {
+  return c.lines?.[key] ?? fallback;
 }
 
 // 事件と無関係な乗員の初期位置を、指定の区画から選ぶ
